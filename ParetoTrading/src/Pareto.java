@@ -1,6 +1,6 @@
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.Arrays;
@@ -15,14 +15,14 @@ public class Pareto {
 	public static int UPMS = 1;
 
 	public static void main(String[] args) throws InterruptedException {
-		final int SIZE = 1500;
+		final int SIZE = Toolkit.getDefaultToolkit().getScreenSize().width;
 		final int START_MONEY = 10;
 		
 		int[] data = new int[SIZE];
 		Arrays.fill(data, START_MONEY);
 		
 		JFrame frame = createFrame(SIZE, data);
-		Thread render = startRenderThread(frame, 60);
+		startRenderThread(frame, 60);
 		
 		int uc = 0; // uc -> update count
 		Random rand = new Random();
@@ -94,7 +94,7 @@ public class Pareto {
 			}
 		};
 		display.setBackground(Color.BLACK);
-		display.setPreferredSize(new Dimension(size, 800));
+		display.setPreferredSize(Toolkit.getDefaultToolkit().getScreenSize());
 		
 		frame.setContentPane(display);
 		
@@ -124,22 +124,18 @@ public class Pareto {
 		return frame;
 	}
 	
-	public static Thread startRenderThread(JFrame frame, int FPS) {
-		Thread render = new Thread() {
-			public void run() {
-				while(true) {
-					if(!PAUSE)
-						frame.repaint();
-					try {
-						Thread.sleep(1000 / FPS);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
+	public static void startRenderThread(JFrame frame, int FPS) {
+		new Thread(() -> {
+			while(true) {
+				if(!PAUSE)
+					frame.repaint();
+				try {
+					Thread.sleep(1000 / FPS);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
 				}
 			}
-		};
-		render.start();
-		return render;
+		}).start();
 	}
 	
 }
