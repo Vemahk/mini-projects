@@ -1,10 +1,10 @@
-import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -20,6 +20,8 @@ public class Art {
 
 	public static Pos startingPos;
 	
+	public static byte colorBits = 7;
+	
 	public static int WIDTH = 1;
 	public static int HEIGHT = 1;
 	
@@ -31,38 +33,42 @@ public class Art {
 	public static BufferedImage image;
 	
 	public static JFrame window;
-	public static long lastWindowUpdate;
 	
 	public static Random rand = new Random();
 	
 	public static void main(String[] args) throws IOException {
 		
-		//Sorted set of all colors.
-		colors = new TreeSet<>();
+		if(args.length > 0)
+			try {
+				colorBits = Byte.parseByte(args[0]);
+			}catch(NumberFormatException e) { e.printStackTrace(); }
 		
-		final byte colorBits = 6; //This really should be a static final at the top...
+		int colorBitsInv = 8 - colorBits;
 		final byte maxVal = (byte) (1<<colorBits);
 		
-		for(int x=0;x<colorBits*3;x++) {
-			if((x&1)==0) WIDTH<<=1;
-			else HEIGHT<<=1;
-		}
+		WIDTH <<= (colorBits*3+1)/2;
+		HEIGHT <<= colorBits*3 / 2;
+		
+		//Sorted set of all colors.
+		colors = new TreeSet<>();
 		
 		System.out.printf("WIDTH %d | HEIGHT %d%n", WIDTH, HEIGHT);
 		
 		//Gather all x-bit colors into the TreeSet.
 		for(byte r = 0, g = 0, b = 0;;) {
-			colors.add(new RGB(r<<(8 - colorBits), g<<(8 - colorBits), b<<(8 - colorBits)));
+			colors.add(new RGB(r<<colorBitsInv, g<<colorBitsInv, b<<colorBitsInv));
+			//System.out.printf("%d %d %d%n", r, g, b);
 			if(++r == maxVal) {
 				r = 0;
 				if(++g == maxVal) {
 					g = 0;
 					if(++b == maxVal)
-						break;
+						break; //All possible colors reached; end.
 				}
 			}
 		}
 		
+		System.gc();
 		System.out.printf("Tree built | %d colors%n", colors.size());
 		
 		//Image that will be drawn to.
@@ -79,7 +85,7 @@ public class Art {
 		Iterator<RGB> iter = colors.iterator();
 		
 		//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
-		open = new HashSet<>();
+		open = new HashSet<>(1 << colorBits); //So apparently setting this thing to be capable of holding large numbers speeds it up... Who'd've thunk?
 		
 		//Places the first pixel randomly from which the rest of the image builds.
 		startingPos = Pos.status[rand.nextInt(WIDTH)][rand.nextInt(HEIGHT)];
@@ -102,16 +108,15 @@ public class Art {
 			}
 
 			Pos n = closest.setRandom(next);
+			
+			if(n == null) {//Theoretically this should never happen... I actually am not sure what needs to be done if this somehow occurs.
+				open.remove(closest);
+				continue; //?
+			}
+			
+			
 			if(n.isOpen())
 				open.add(n);
-			
-			if(window != null) {
-				long last = lastWindowUpdate;
-				if(System.currentTimeMillis() - last > 17) {
-					lastWindowUpdate = System.currentTimeMillis();
-					window.repaint();
-				}
-			}
 		}
 		
 		System.out.println("Image built.");
@@ -143,6 +148,8 @@ public class Art {
 		int renderWidth = 512;
 		int renderHeight = (WIDTH == HEIGHT) ? 512 : 256;
 		JPanel panel = new JPanel() {
+			private static final long serialVersionUID = -5197114419981121255L;
+
 			public void paintComponent(Graphics g) {
 				super.paintComponent(g);
 				g.drawImage(image, 0, 0, renderWidth, renderHeight, window);
@@ -155,6 +162,13 @@ public class Art {
 		window.setResizable(false);
 		window.setLocationRelativeTo(null);
 		window.setVisible(true);
+		
+		new Thread(() -> {
+			for(;;) {
+				window.repaint();
+				try { Thread.sleep(17); } catch (InterruptedException e) { }
+			}
+		}, "Fractle Repaint Thread").start();
 	}
 	
 }
@@ -184,7 +198,7 @@ class Pos{
 	}
 	
 	public void setNeighborAsSet(Dir d) {
-		neighborStatus |= 1 << d.bn();
+		neighborStatus |= 1 << d.bn;
 	}
 	
 	public Pos setRGB(int rgb) {
@@ -193,8 +207,8 @@ class Pos{
 		Art.image.setRGB(x, y, rgb);
 		
 		for(Dir dir : Dir.values()) {
-			int nx = x + dir.dx();
-			int ny = y + dir.dy();
+			int nx = x + dir.dx;
+			int ny = y + dir.dy;
 			if(nx < 0 || nx >= Art.WIDTH || ny < 0 || ny >= Art.HEIGHT) {
 				setNeighborAsSet(dir);
 				continue;
@@ -211,8 +225,8 @@ class Pos{
 	public int getB() { return rgb & 0xFF; }
 	
 	public Pos getNeighbor(Dir dir) {
-		int nx = x + dir.dx();
-		int ny = y + dir.dy();
+		int nx = x + dir.dx;
+		int ny = y + dir.dy;
 		if(nx < 0 || nx >= status.length || y < 0 || y >= status[x].length)
 			return null;
 		return status[nx][ny];
@@ -236,27 +250,41 @@ class Pos{
 		return out;
 	}
 	
+	/**
+	 * Presumed that this is an open pixel...
+	 * @param rgb
+	 * @return
+	 */
 	public Pos setRandom(int rgb) {
-		ArrayList<Pos> poss = new ArrayList<>(8);
+		Pos[] poss = new Pos[8];
 		
 		for(int tmp = neighborStatus, x = 0;x < 8;tmp>>>=1, x++)
 			if((tmp&1) == 0)
-				poss.add(getNeighbor(Dir.values()[x]));
+				poss[x] = getNeighbor(Dir.values()[x]);
 		
-		Collections.sort(poss, new Comparator<Pos>() {
-			@Override
-			public int compare(Pos a, Pos b) {
-				return a.numOpenNeighbors() - b.numOpenNeighbors();
-			}
+		Arrays.sort(poss, (Pos a, Pos b) -> {
+			if(a == null)
+				if(b == null)
+					return 0;
+				else return 1;
+			else if(b == null)
+				return -1;
+			
+			return a.numOpenNeighbors() - b.numOpenNeighbors();
 		});
 		
-		int std = poss.get(0).numOpenNeighbors();
-		int range = poss.size()-1;
+		if(poss[0] == null)
+			return null; //Shouldn't happen, but... ya know.
 		
-		while(range > 0 && poss.get(range).numOpenNeighbors() != std)
+		int std = poss[0].numOpenNeighbors();
+		int range = 7;
+		
+		for(;range >= 0 && poss[range] == null; range--);
+		
+		while(range > 0 && poss[range].numOpenNeighbors() != std)
 			range--;
 		
-		return poss.get((int)(Math.random()*(range+1))).setRGB(rgb);
+		return poss[(int)(Math.random()*(range+1))].setRGB(rgb);
 	}
 }
 
@@ -270,19 +298,14 @@ enum Dir{
 	DL(-1,  1, 6),
 	L (-1,  0, 7);
 	
-	private byte dx;
-	private byte dy;
-	private byte bn;
+	byte dx, dy, bn;
 	
 	private Dir(int dx, int dy, int byteNum) {
 		this.dx = (byte)dx;
 		this.dy = (byte)dy;
 		this.bn = (byte)byteNum;
 	}
-	
-	public byte dx() { return dx; }
-	public byte dy() { return dy; }
-	public byte bn() { return bn; }
+
 	public Dir opp() { return Dir.values()[(bn+4)%8]; }
 }
 
@@ -294,9 +317,8 @@ class RGB implements Comparable<RGB>{
 	public RGB(int r, int g, int b) {
 		rgb = (r&0xFF)<<16 | (g&0xFF)<<8 | (b&0xFF);
 		
-		float[] hsb = new float[3];
-		Color.RGBtoHSB(r, g, b, hsb);
-		hue = hsb[0];
+		//set the hue
+		hue = getHue(r,g,b);
 	}
 	
 	public int getRGB() { return rgb; }
@@ -306,5 +328,24 @@ class RGB implements Comparable<RGB>{
 		if(hue != o.hue)
 			return hue < o.hue ? 1 : -1;
 		return rgb - o.rgb;
+	}
+	
+	private static float getHue(int r, int g, int b) {
+		float min = Math.min(Math.min(r, g), b);
+		float max = Math.max(Math.max(r, g), b);
+		
+		if(min == max) return 0;
+		
+		float hue = 0;
+		if (r == max)
+			hue = (g - b) / (max - min);
+		else if (g == max)
+			hue = 2f + (b - r) / (max - min);
+		else
+			hue = 4f + (r - g) / (max - min);
+		
+		hue *= 60f;
+		if(hue < 0) hue += 360;
+		return hue;
 	}
 }
