@@ -3,7 +3,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Random;
 import java.util.Stack;
 
@@ -22,7 +21,7 @@ public class Enigma {
 	public static Rotor ref;
 	
 	public static void main(String[] args) throws IOException {
-		int code = JOptionPane.showOptionDialog(null, null, "Enigma 1.0", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, new String[]{"Encode", "Decode"}, "Encode");
+		int code = JOptionPane.showOptionDialog(null, null, "Enigma 1.1", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, new String[]{"Encode", "Decode"}, "Encode");
 		
 		JFileChooser fc = new JFileChooser();
 		fc.setCurrentDirectory(new File(System.getProperty("user.home") + "/Desktop/"));
@@ -35,43 +34,26 @@ public class Enigma {
 		if(f == null || !f.exists())
 			return;
 		
-		if(code==0) {
-			if(!f.isDirectory())
-				encodeFile(f);
-			else encodeDir(f);
-		}else if(code==1) {
-			if(!f.isDirectory())
-				decodeFile(f);
-			else decodeDir(f);
-		}
+		if(code==0) encode(f);
+		else if(code==1) decode(f);
 	}
 	
-	public static void encodeDir(File dir) throws IOException {
-		for(File x : dir.listFiles())
-			if(x.isDirectory())
-				encodeDir(x);
-			else encodeFile(x);
-	}
-	
-	public static void decodeDir(File dir) throws IOException {
-		for(File x : dir.listFiles())
-			if(x.isDirectory())
-				decodeDir(x);
-			else decodeFile(x);
-	}
-	
-	public static void encodeFile(File f) throws IOException {
+	public static void encode(File f) throws IOException {
 
-		if(f.getName().endsWith(".lck"))
+		if(f.isDirectory()) {
+			for(File x : f.listFiles())
+				encode(x);
 			return;
+		}
+		
+		if(f.getName().endsWith(".lck"))
+			return; //Do not re-encode an encoded file.
 		
 		FileInputStream fis = new FileInputStream(f);
 		
 		rand = new Random();
 		long seed = 0;
 		rand.setSeed(seed = rand.nextLong() >>> 16);
-		
-		long size = 0;
 		
 		l = new Rotor(shuffle()).init(rand.nextInt(16));
 		m = new Rotor(shuffle()).init(rand.nextInt(16));
@@ -81,67 +63,50 @@ public class Enigma {
 		if(DEBUG)
 			System.out.printf("%s%n%s%n%s%n%s%n", l, m, r, ref);
 		
-		File tmpOut = new File(f.getParentFile(), "tmpout.dat");
-		if(tmpOut.exists())
-			tmpOut.delete();
-		tmpOut.createNewFile();
-		FileOutputStream tmpFos = new FileOutputStream(tmpOut);
+		File outFile = new File(f.getParentFile(), f.getName()+ ".lck");
+		FileOutputStream fos = new FileOutputStream(outFile);
+		
+		ByteBuffer buf = ByteBuffer.allocate(8);
+		buf.putLong(seed);
+		fos.write(buf.array());
 		
 		byte[] buffer = new byte[4096];
 		int len = 0;
 		while((len = fis.read(buffer)) > 0) {
-			size += len;
 			encode(buffer, len);
-			tmpFos.write(buffer, 0, len);
+			fos.write(buffer, 0, len);
 		}
 		
 		fis.close();
-		tmpFos.flush();
-		tmpFos.close();
-		
-		File outFile = new File(f.getParentFile(), f.getName()+ ".lck");
-		FileOutputStream fos = new FileOutputStream(outFile);
-		FileInputStream tmpFis = new FileInputStream(tmpOut);
-		
-		fos.write(longToBytes(seed));
-		fos.write(longToBytes(size));
-		
-		while((len = tmpFis.read(buffer)) > 0)
-			fos.write(buffer, 0, len);
-
-		f.delete();
 		fos.flush();
 		fos.close();
-		tmpFis.close();
-		tmpOut.delete();
 
+		f.delete();
 	}
 	
-	public static void decodeFile(File f) throws IOException {
-
-		if(!f.getName().endsWith(".lck"))
+	public static void decode(File f) throws IOException {
+		
+		if(f.isDirectory()) {
+			for(File x : f.listFiles())
+				decode(x);
 			return;
+		}
+		
+		if(!f.getName().endsWith(".lck"))
+			return; //Do not decode a file that isn't locked.
 		
 		FileInputStream fis = new FileInputStream(f);
 		
 		long seed = 0;
-		long size = 0;
+		long size = f.length() - 8;
 		
-		ByteBuffer tmpbuf = ByteBuffer.allocate(16);
+		ByteBuffer bbuf = ByteBuffer.allocate(8);
 		
-		byte[] tmpbufarr = tmpbuf.array();
-		fis.read(tmpbufarr);
-		seed = tmpbuf.getLong();
-		size = tmpbuf.getLong();
+		fis.read(bbuf.array());
+		seed = bbuf.getLong();
 		
 		if(seed == 0) {
 			System.out.println("Seed not found...");
-			fis.close();
-			return;
-		}
-		
-		if(size == 0) {
-			System.out.println("Size not found...");
 			fis.close();
 			return;
 		}
@@ -156,61 +121,55 @@ public class Enigma {
 		for(long i=0;i<size*2;i++)
 			if(r.rotate() && m.rotate() && l.rotate());
 		
-		
 		if(DEBUG) System.out.printf("%s%n%s%n%s%n%s%n", l, m, r, ref);
 		
-		byte[][] data = new byte[(int) (size / 4096 + 1)][];
-		
-		byte[] buffer = new byte[4096];
-		int len = 0;
-		
-		int dist = 0;
-		for(;dist<data.length && (len = fis.read(buffer)) > 0; dist++) {
-			data[dist] = Arrays.copyOf(buffer, len);
-		} dist--;
-		
+		//Let's just hope the size of the file is less than Integer.MAX_VALUE;
+		byte[] buf = new byte[(int)size];
+		fis.read(buf);
 		fis.close();
-		
-		for(int i=dist;i>=0;i--) {
-			decode(data[i]);
-		}
+		decode(buf);
 		
 		File outFile = new File(f.getParentFile(), f.getName().substring(0, f.getName().length()-4));
 		FileOutputStream fos = new FileOutputStream(outFile);
 		
-		for(int i=0;i<=dist;i++)
-			fos.write(data[i]);
-		
-		f.delete();
+		fos.write(bbuf.array());
 		fos.flush();
 		fos.close();
+		
+		f.delete();
 	}
 	
 	public static void encode(byte[] in, int len) {
-		for(int i=0;i<in.length && i < len;i++) {
-			byte left = (byte) ((in[i]&0xF0) >>> 4);
-			byte right = (byte) (in[i]&0xF);
-			
-			left = Rotor.translate(left, l, m, r, ref, true);
-			right = Rotor.translate(right, l, m, r, ref, true);
-			
-			if(DEBUG) System.out.println();
-			
-			in[i] = (byte) (left << 4 | right);
-		}
+		for(int i=0;i<in.length && i < len;i++)
+			in[i] = encode(in[i]);
+	}
+	
+	public static byte encode(byte b) {
+		byte left = (byte) ((b & 0xF0) >>> 4);
+		byte right = (byte) (b & 0xF);
+		
+		left = Rotor.translate(left, l, m, r, ref, true);
+		right = Rotor.translate(right, l, m, r, ref, true);
+		
+		if(DEBUG) System.out.println();
+		
+		return (byte) (left << 4 | right);
 	}
 	
 	public static void decode(byte[] in){
-		for(int i=in.length-1;i>=0;i--) {
-			byte left = (byte) ((in[i]&0xF0) >>> 4);
-			byte right = (byte) (in[i] & 0xF);
+		for(int i=in.length-1;i>=0;i--)
+			in[i] = decode(in[i]);
+	}
 	
-			right = Rotor.translate(right, l, m, r, ref, false);
-			left = Rotor.translate(left, l, m, r, ref, false);
-			
-			if(DEBUG) System.out.println();
-			in[i] = (byte)(left << 4 | right);
-		}
+	public static byte decode(byte b) {
+		byte left = (byte) ((b & 0xF0) >>> 4);
+		byte right = (byte) (b & 0xF);
+
+		right = Rotor.translate(right, l, m, r, ref, false);
+		left = Rotor.translate(left, l, m, r, ref, false);
+		
+		if(DEBUG) System.out.println();
+		return (byte)(left << 4 | right); 
 	}
 	
 	public static byte[] shuffle() {
@@ -250,21 +209,6 @@ public class Enigma {
 		arr[a] ^= c;
 		arr[b] ^= c;
 	}
-	
-	private static byte[] longToBytes(long l) {
-		byte[] out = new byte[8];
-		for(int i=0;i<8;i++)
-			out[i] = (byte)((l >>> (56 - 8*i)) & 0xFF);
-		return out;
-	}
-	
-	private static long bytesToLong(byte[] b) {
-		long out = 0;
-		for(int i=0;i<8;i++) 
-			out += ((long)b[i] & 0xFF) << (56 - i*8);
-		return out;
-	}
-	
 }
 
 class Rotor{
@@ -281,8 +225,7 @@ class Rotor{
 		b = m.rtl(b);
 		b = l.rtl(b);
 		
-		if(forward) 
-			if(r.rotate() && m.rotate() && l.rotate());
+		if(forward) if(r.rotate() && m.rotate() && l.rotate());
 		return b;
 	}
 	
