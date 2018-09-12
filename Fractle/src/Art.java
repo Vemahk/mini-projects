@@ -1,12 +1,12 @@
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Random;
@@ -20,28 +20,47 @@ public class Art {
 
 	public static Pos startingPos;
 	
-	public static byte colorBits = 7;
-	
 	public static int WIDTH = 1;
 	public static int HEIGHT = 1;
 	
 	//Directory where the program will save the image once done.
-	public static final String DESKTOP = System.getProperty("user.home") + "\\Desktop\\fract";
+	public static final File SAVE = new File("saves\\");
 	
 	public static TreeSet<RGB> colors;
-	public static HashSet<Pos> open;
 	public static BufferedImage image;
 	
 	public static JFrame window;
 	
 	public static Random rand = new Random();
 	
-	public static void main(String[] args) throws IOException {
+	public static Runnable generate;
+	
+	/* PASSED IN INFORMATION */
+	public static boolean save;
+	public static boolean repeat;
+	public static byte colorBits = 6;
+	
+	public static void parseArgs(String... args) {
+		for(int i=0;i<args.length;i++) {
+			if("-repeat".equals(args[i]))
+				repeat = true;
+			if("-bits".equals(args[i]) && args.length > i + 1)
+				try {
+					colorBits = Byte.parseByte(args[i+1]);
+				}catch (NumberFormatException e) { e.printStackTrace(); }
+			if("-save".equals(args[i]))
+				save = true;
+			
+			if("-help".equals(args[i])) {
+				System.out.printf("Available commands:%n%s%n%s%n%s%n", "-repeat", "-bits [num 4-8]", "-save");
+				System.exit(0);
+			}
+		}
+	}
+	
+	public static void main(String... args) throws IOException {
 		
-		if(args.length > 0)
-			try {
-				colorBits = Byte.parseByte(args[0]);
-			}catch(NumberFormatException e) { e.printStackTrace(); }
+		parseArgs(args);
 		
 		int colorBitsInv = 8 - colorBits;
 		final byte maxVal = (byte) (1<<colorBits);
@@ -68,64 +87,76 @@ public class Art {
 			}
 		}
 		
-		System.gc();
 		System.out.printf("Tree built | %d colors%n", colors.size());
-		
+
 		//Image that will be drawn to.
 		image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
 		
 		//Builds the JFrame to display the preview of the image's construction.
 		buildPreview();
 		
-		//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
-		Pos.buildStatus(WIDTH, HEIGHT);
-		System.out.println("Bitmap created");
-		
-		//Iterator for all the colors.
-		Iterator<RGB> iter = colors.iterator();
-		
-		//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
-		open = new HashSet<>(1 << colorBits); //So apparently setting this thing to be capable of holding large numbers speeds it up... Who'd've thunk?
-		
-		//Places the first pixel randomly from which the rest of the image builds.
-		startingPos = Pos.status[rand.nextInt(WIDTH)][rand.nextInt(HEIGHT)];
-		open.add(startingPos.setRGB(iter.next().getRGB()));
+		System.out.println("Frame built.");
 
-		while(iter.hasNext()) {
-			int next = iter.next().getRGB();
+		generate = () -> {
+			/*for(int x=0;x<image.getWidth();x++)
+				for(int y=0;y<image.getHeight();y++)
+					image.setRGB(x, y, 0);*/
 			
-			Iterator<Pos> piter = open.iterator();
+			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
+			Pos.buildStatus(WIDTH, HEIGHT);
+			System.out.println("\nBitmap created");
 			
-			Pos closest = null;
+			//Iterator for all the colors.
+			Iterator<RGB> iter = colors.iterator();
 			
-			while(piter.hasNext()) {
-				Pos pnext = piter.next();
-				if(!pnext.isOpen()) piter.remove();
-				else if(closest == null)
-					closest = pnext;
-				else if(pnext.roughDist(next) < closest.roughDist(next))
-					closest = pnext;
-			}
+			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
+			HashSet<Pos> open = new HashSet<>(1 << colorBits); //So apparently setting this thing to be capable of holding large numbers speeds it up... Who'd've thunk?
+			
+			//Places the first pixel randomly from which the rest of the image builds.
+			startingPos = Pos.status[rand.nextInt(WIDTH)][rand.nextInt(HEIGHT)];
+			open.add(startingPos.setRGB(iter.next().getRGB()));
 
-			Pos n = closest.setRandom(next);
-			
-			if(n == null) {//Theoretically this should never happen... I actually am not sure what needs to be done if this somehow occurs.
-				open.remove(closest);
-				continue; //?
+			while(iter.hasNext()) {
+				int next = iter.next().getRGB();
+				
+				Iterator<Pos> piter = open.iterator();
+				
+				Pos closest = null;
+				
+				while(piter.hasNext()) {
+					Pos pnext = piter.next();
+					if(!pnext.isOpen()) piter.remove();
+					else if(closest == null)
+						closest = pnext;
+					else if(pnext.roughDist(next) < closest.roughDist(next))
+						closest = pnext;
+				}
+
+				Pos n = closest.setRandom(next);
+				
+				if(n == null) {//Theoretically this should never happen... I actually am not sure what needs to be done if this somehow occurs.
+					open.remove(closest);
+					continue; //?
+				}
+				
+				if(n.isOpen())
+					open.add(n);
 			}
 			
+			System.out.println("Image built.");
 			
-			if(n.isOpen())
-				open.add(n);
-		}
+			try {
+				if(save) {
+					saveImage(image);
+					System.out.println("Image written.");
+				}
+			} catch (IOException e) { e.printStackTrace(); }
+			
+			if(repeat)
+				new Thread(generate, "Generation Thread").start();
+		};
 		
-		System.out.println("Image built.");
-		
-		drawImage(image);
-		
-		System.out.println("Image written.");
-		
-		window.repaint();
+		new Thread(generate, "Generation Thread").start();
 	}
 	
 	/**
@@ -133,16 +164,19 @@ public class Art {
 	 * @param image
 	 * @throws IOException
 	 */
-	public static void drawImage(BufferedImage image) throws IOException {
-		File outFile = new File(DESKTOP + "01.png");
-		for(int i=2;outFile.exists();)
-			outFile = new File(DESKTOP + String.format("%02d.png", i++));
+	public static void saveImage(BufferedImage image) throws IOException {
+		if(!SAVE.exists()) SAVE.mkdirs();
+		
+		File outFile = new File(SAVE, "fract01.png");
+		for(int i=2;outFile.exists();i++)
+			outFile = new File(SAVE, String.format("fract%02d.png", i));
 		System.out.println("Out file: "+outFile.getName());
 		ImageIO.write(image, "png", outFile);
 	}
 	
 	public static void buildPreview() {
 		window = new JFrame("Progress Check");
+		window.setUndecorated(true);
 		window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		
 		int renderWidth = 512;
@@ -152,16 +186,32 @@ public class Art {
 
 			public void paintComponent(Graphics g) {
 				super.paintComponent(g);
+				if(image == null) return;
 				g.drawImage(image, 0, 0, renderWidth, renderHeight, window);
 			}
 		};
-		panel.setPreferredSize(new Dimension(renderWidth-10, renderHeight-10));
+		panel.setBackground(Color.BLACK);
+		panel.setPreferredSize(new Dimension(renderWidth, renderHeight));
 		window.add(panel);
-		
-		window.pack();
+
 		window.setResizable(false);
+		window.pack();
 		window.setLocationRelativeTo(null);
 		window.setVisible(true);
+		
+		window.addKeyListener(new KeyListener() {
+
+			@Override public void keyPressed(KeyEvent e) {
+				if(e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+					window.dispose();
+					System.exit(0);
+				}
+			}
+
+			@Override public void keyReleased(KeyEvent e) { }
+			@Override public void keyTyped(KeyEvent e) { } 
+			
+		});
 		
 		new Thread(() -> {
 			for(;;) {
@@ -220,7 +270,7 @@ class Pos{
 	}
 	
 	public int getRGB() { return rgb; }
-	public int getR() { return rgb >>> 16; }
+	public int getR() { return (rgb >>> 16) & 0xFF; }
 	public int getG() { return (rgb >>> 8) & 0xFF; }
 	public int getB() { return rgb & 0xFF; }
 	
@@ -256,9 +306,9 @@ class Pos{
 	 * @return
 	 */
 	public Pos setRandom(int rgb) {
-		Pos[] poss = new Pos[8];
+		Pos[] poss = new Pos[Dir.values().length];
 		
-		for(int tmp = neighborStatus, x = 0;x < 8;tmp>>>=1, x++)
+		for(int tmp = neighborStatus, x = 0;x < Dir.values().length;tmp>>>=1, x++)
 			if((tmp&1) == 0)
 				poss[x] = getNeighbor(Dir.values()[x]);
 		
@@ -289,27 +339,32 @@ class Pos{
 }
 
 enum Dir{
-	UL(-1, -1, 0),
-	U (0,  -1, 1),
-	UR(1,  -1, 2),
-	R (1,   0, 3),
-	DR(1,   1, 4),
-	D (0,   1, 5),
-	DL(-1,  1, 6),
-	L (-1,  0, 7);
+	UL(-1, -1),
+	U (0,  -1),
+	UR(1,  -1),
+	R (1,   0),
+	DR(1,   1),
+	D (0,   1),
+	DL(-1,  1),
+	L (-1,  0);
 	
 	byte dx, dy, bn;
 	
-	private Dir(int dx, int dy, int byteNum) {
+	private Dir(int dx, int dy) {
 		this.dx = (byte)dx;
 		this.dy = (byte)dy;
-		this.bn = (byte)byteNum;
+		this.bn = RGB.nextByteNum++;
 	}
 
-	public Dir opp() { return Dir.values()[(bn+4)%8]; }
+	public Dir opp() {
+		int size = Dir.values().length;
+		return Dir.values()[(bn+size/2)%size];
+	}
 }
 
 class RGB implements Comparable<RGB>{
+	
+	public static byte nextByteNum = 0;
 	
 	private int rgb;
 	private float hue;
@@ -337,12 +392,9 @@ class RGB implements Comparable<RGB>{
 		if(min == max) return 0;
 		
 		float hue = 0;
-		if (r == max)
-			hue = (g - b) / (max - min);
-		else if (g == max)
-			hue = 2f + (b - r) / (max - min);
-		else
-			hue = 4f + (r - g) / (max - min);
+		if (r == max) hue = (g - b) / (max - min);
+		else if (g == max) hue = 2f + (b - r) / (max - min);
+		else hue = 4f + (r - g) / (max - min);
 		
 		hue *= 60f;
 		if(hue < 0) hue += 360;
