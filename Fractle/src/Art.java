@@ -1,46 +1,40 @@
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.Random;
-import java.util.TreeSet;
 
 import javax.imageio.ImageIO;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 
 public class Art {
-
-	public static Pos startingPos;
-	
 	public static int WIDTH = 1;
 	public static int HEIGHT = 1;
 	
 	//Directory where the program will save the image once done.
 	public static final File SAVE = new File("saves\\");
 	
-	public static TreeSet<RGB> colors;
+	public static RGB[] colors;
 	public static BufferedImage image;
-	
-	public static JFrame window;
+	public static boolean alive = true;
 	
 	public static Random rand = new Random();
 	
-	public static Runnable generate;
-	
-	/* PASSED IN INFORMATION */
+	/* ARGS */
 	public static boolean save;
 	public static boolean repeat;
 	public static byte colorBits = 6;
 	
-	public static void parseArgs(String... args) {
+	public static boolean parseArgs(String... args) {
 		for(int i=0;i<args.length;i++) {
 			if("-repeat".equals(args[i]))
 				repeat = true;
@@ -53,41 +47,49 @@ public class Art {
 			
 			if("-help".equals(args[i])) {
 				System.out.printf("Available commands:%n%s%n%s%n%s%n", "-repeat", "-bits [num 4-8]", "-save");
-				System.exit(0);
+				return true;
 			}
 		}
+		return false;
 	}
 	
-	public static void main(String... args) throws IOException {
+	public static void main(String... args) throws IOException, InterruptedException {
 		
-		parseArgs(args);
+		if(parseArgs(args)) return;
 		
 		int colorBitsInv = 8 - colorBits;
-		final byte maxVal = (byte) (1<<colorBits);
+		final int maxVal = 1<<colorBits;
 		
 		WIDTH <<= (colorBits*3+1)/2;
 		HEIGHT <<= colorBits*3 / 2;
 		
 		//Sorted set of all colors.
-		colors = new TreeSet<>();
+		colors = new RGB[1 << (colorBits * 3)];
 		
 		System.out.printf("WIDTH %d | HEIGHT %d%n", WIDTH, HEIGHT);
 		
 		//Gather all x-bit colors into the TreeSet.
-		for(byte r = 0, g = 0, b = 0;;) {
-			colors.add(new RGB(r<<colorBitsInv, g<<colorBitsInv, b<<colorBitsInv));
-			//System.out.printf("%d %d %d%n", r, g, b);
+		for(int i=0, r = 0, g = 0, b = 0;;) {
+			colors[i++] = new RGB(r<<colorBitsInv, g<<colorBitsInv, b<<colorBitsInv);
+			
 			if(++r == maxVal) {
 				r = 0;
 				if(++g == maxVal) {
 					g = 0;
-					if(++b == maxVal)
-						break; //All possible colors reached; end.
+					if(++b == maxVal) { //All possible colors reached; end.
+						Arrays.sort(colors, new Comparator<RGB>() { 
+							@Override public int compare(RGB o1, RGB o2) {
+								if(o1.getHue() != o2.getHue())
+									return o1.getHue() < o2.getHue() ? 1 : -1;
+								return o1.getRGB() - o2.getRGB();
+							}
+						});
+						System.out.printf("Array built | %d colors%n", i);
+						break; 
+					}
 				}
 			}
 		}
-		
-		System.out.printf("Tree built | %d colors%n", colors.size());
 
 		//Image that will be drawn to.
 		image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
@@ -97,50 +99,43 @@ public class Art {
 		
 		System.out.println("Frame built.");
 
-		generate = () -> {
-			/*for(int x=0;x<image.getWidth();x++)
-				for(int y=0;y<image.getHeight();y++)
-					image.setRGB(x, y, 0);*/
-			
+		Runnable generate = () -> {
 			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
-			Pos.buildStatus(WIDTH, HEIGHT);
+			RGB.build(WIDTH, HEIGHT);
+			for(int i=0;i<colors.length;i++)
+				colors[i].reset();
 			System.out.println("\nBitmap created");
 			
-			//Iterator for all the colors.
-			Iterator<RGB> iter = colors.iterator();
-			
 			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
-			HashSet<Pos> open = new HashSet<>(1 << colorBits); //So apparently setting this thing to be capable of holding large numbers speeds it up... Who'd've thunk?
+			LinkedList<RGB> open = new LinkedList<>();
 			
 			//Places the first pixel randomly from which the rest of the image builds.
-			startingPos = Pos.status[rand.nextInt(WIDTH)][rand.nextInt(HEIGHT)];
-			open.add(startingPos.setRGB(iter.next().getRGB()));
-
-			while(iter.hasNext()) {
-				int next = iter.next().getRGB();
+			int i=0;
+			open.add(colors[i++].setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT)));
+			//Iteration time!
+			for(;i < colors.length && colors[i] != null;) {
+				if(!alive) {
+					System.out.println("Interrupted.");
+					break;
+				}
 				
-				Iterator<Pos> piter = open.iterator();
+				RGB next = colors[i++];
+				Iterator<RGB> rIter = open.iterator();
 				
-				Pos closest = null;
+				RGB closest = null;
 				
-				while(piter.hasNext()) {
-					Pos pnext = piter.next();
-					if(!pnext.isOpen()) piter.remove();
+				while(rIter.hasNext()) {
+					RGB rNext = rIter.next();
+					if(!rNext.isOpen()) rIter.remove();
 					else if(closest == null)
-						closest = pnext;
-					else if(pnext.roughDist(next) < closest.roughDist(next))
-						closest = pnext;
+						closest = rNext;
+					else if(rNext.distSqr(next) < closest.distSqr(next))
+						closest = rNext;
 				}
-
-				Pos n = closest.setRandom(next);
+				closest.setRandomly(next);
 				
-				if(n == null) {//Theoretically this should never happen... I actually am not sure what needs to be done if this somehow occurs.
-					open.remove(closest);
-					continue; //?
-				}
-				
-				if(n.isOpen())
-					open.add(n);
+				if(next.isOpen())
+					open.add(next);
 			}
 			
 			System.out.println("Image built.");
@@ -151,12 +146,15 @@ public class Art {
 					System.out.println("Image written.");
 				}
 			} catch (IOException e) { e.printStackTrace(); }
-			
-			if(repeat)
-				new Thread(generate, "Generation Thread").start();
 		};
 		
-		new Thread(generate, "Generation Thread").start();
+		do {
+			Thread genthread = new Thread(generate, "Generation Thread");
+			genthread.start();
+			genthread.join();
+		}while(repeat);
+		
+		alive = false;
 	}
 	
 	/**
@@ -175,7 +173,7 @@ public class Art {
 	}
 	
 	public static void buildPreview() {
-		window = new JFrame("Progress Check");
+		JFrame window = new JFrame("Progress Check");
 		window.setUndecorated(true);
 		window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		
@@ -199,22 +197,18 @@ public class Art {
 		window.setLocationRelativeTo(null);
 		window.setVisible(true);
 		
-		window.addKeyListener(new KeyListener() {
-
+		window.addKeyListener(new KeyAdapter() {
 			@Override public void keyPressed(KeyEvent e) {
 				if(e.getKeyCode() == KeyEvent.VK_ESCAPE) {
 					window.dispose();
-					System.exit(0);
+					repeat = false;
+					alive = false;
 				}
 			}
-
-			@Override public void keyReleased(KeyEvent e) { }
-			@Override public void keyTyped(KeyEvent e) { } 
-			
 		});
 		
 		new Thread(() -> {
-			for(;;) {
+			while(alive) {
 				window.repaint();
 				try { Thread.sleep(17); } catch (InterruptedException e) { }
 			}
@@ -223,166 +217,97 @@ public class Art {
 	
 }
 
-class Pos{
+class RGB{
 	
-	public static Pos[][] status;
-	
-	public static void buildStatus(int WIDTH, int HEIGHT) {
-		status = new Pos[WIDTH][HEIGHT];
-		
-		for(int x=0;x<WIDTH;x++)
-			for(int y=0;y<HEIGHT;y++)
-				status[x][y] = new Pos(x, y);
+	private static RGB[][] board;
+	public static void build(int WIDTH, int HEIGHT) {
+		board = new RGB[WIDTH][HEIGHT];
 	}
 	
-	private short x;
-	private short y;
+	private static boolean isPosSet(int x, int y) {
+		if(x < 0 || x >= board.length || y < 0 || y >= board[x].length) return true;
+		return board[x][y] != null;
+	}
+	
 	private int rgb;
+	private float hue;
 	
-	private byte neighborStatus;
-	private boolean isSet;
+	private short x, y;
+	private byte status, numOpen;
 	
-	public Pos(int x, int y) {
-		this.x = (short)x;
-		this.y = (short)y;
+	public RGB(int r, int g, int b) {
+		rgb = (r&0xFF)<<16 | (g&0xFF)<<8 | (b&0xFF);
+		hue = getHue(r,g,b);
+		reset();
 	}
 	
-	public void setNeighborAsSet(Dir d) {
-		neighborStatus |= 1 << d.bn;
+	public void reset() {
+		x = y = -1;
+		numOpen=8;
+		status = 0;
 	}
 	
-	public Pos setRGB(int rgb) {
-		this.rgb = rgb;
-		isSet = true;
-		Art.image.setRGB(x, y, rgb);
-		
-		for(Dir dir : Dir.values()) {
-			int nx = x + dir.dx;
-			int ny = y + dir.dy;
-			if(nx < 0 || nx >= Art.WIDTH || ny < 0 || ny >= Art.HEIGHT) {
-				setNeighborAsSet(dir);
-				continue;
-			}
-			status[nx][ny].setNeighborAsSet(dir.opp());
-		}
-		
-		return this;
-	}
-	
+	public void setNeighbor(Dir d) { status |= 1 << d.bn; numOpen--; }
+	public float getHue() { return hue; }
 	public int getRGB() { return rgb; }
 	public int getR() { return (rgb >>> 16) & 0xFF; }
 	public int getG() { return (rgb >>> 8) & 0xFF; }
 	public int getB() { return rgb & 0xFF; }
 	
-	public Pos getNeighbor(Dir dir) {
-		int nx = x + dir.dx;
-		int ny = y + dir.dy;
-		if(nx < 0 || nx >= status.length || y < 0 || y >= status[x].length)
-			return null;
-		return status[nx][ny];
-	}
+	public boolean isSet() { return x >= 0 && y >= 0; }
+	public boolean isOpen() { return isSet() && status != -1; }
 	
-	public boolean isOpen() {
-		return isSet && neighborStatus != -1;
-	}
-	
-	public int roughDist(int rgb) {
-		int dr = getR() - (rgb >>> 16);
-		int dg = getG() - ((rgb >>> 8) & 0xFF);
-		int db = getB() - (rgb & 0xFF);
+	public int distSqr(RGB rgb) {
+		int dr = getR() - rgb.getR();
+		int dg = getG() - rgb.getG();
+		int db = getB() - rgb.getB();
 		return dr * dr + dg * dg + db * db;
 	}
 	
-	private int numOpenNeighbors(){
-		int out = 0;
-		for(int i = 0; i < 8; i++)
-			if(((this.neighborStatus>>>i)&1) == 0) out++;
-		return out;
+	public RGB setPos(int x, int y) {
+		this.x = (short)x;
+		this.y = (short)y;
+		board[x][y] = this;
+		Art.image.setRGB(x, y, getRGB());
+		
+		for(Dir dir : Dir.vals()) {
+			int nx = x + dir.dx;
+			int ny = y + dir.dy;
+			if(nx < 0 || nx >= Art.WIDTH || ny < 0 || ny >= Art.HEIGHT) {
+				setNeighbor(dir);
+				continue;
+			}
+			if(board[nx][ny] != null) {
+				board[nx][ny].setNeighbor(dir.opp());
+				setNeighbor(dir);
+			}
+		}
+		
+		return this;
 	}
 	
-	/**
-	 * Presumed that this is an open pixel...
-	 * @param rgb
-	 * @return
-	 */
-	public Pos setRandom(int rgb) {
-		Pos[] poss = new Pos[Dir.values().length];
+	public void setRandomly(RGB rgb) {
+		Dir[] dirs = new Dir[numOpen];
 		
-		for(int tmp = neighborStatus, x = 0;x < Dir.values().length;tmp>>>=1, x++)
-			if((tmp&1) == 0)
-				poss[x] = getNeighbor(Dir.values()[x]);
+		for(int x = 0, i=0;x < 8;x++)
+			if(((status>>>x)&1) == 0)
+				dirs[i++] = Dir.vals()[x];
 		
-		Arrays.sort(poss, (Pos a, Pos b) -> {
-			if(a == null)
-				if(b == null)
-					return 0;
-				else return 1;
-			else if(b == null)
-				return -1;
-			
-			return a.numOpenNeighbors() - b.numOpenNeighbors();
+		Arrays.sort(dirs, new Comparator<Dir>() {
+			@Override public int compare(Dir a, Dir b) {
+				int openAtA = 0;
+				int openAtB = 0;
+				for(Dir dir : Dir.vals()) {
+					if(!isPosSet(x + a.dx + dir.dx, y + a.dy + dir.dy)) openAtA++;
+					if(!isPosSet(x + b.dx + dir.dx, y + b.dy + dir.dy)) openAtB++;
+				}
+				return openAtA - openAtB;
+			}
 		});
 		
-		if(poss[0] == null)
-			return null; //Shouldn't happen, but... ya know.
-		
-		int std = poss[0].numOpenNeighbors();
-		int range = 7;
-		
-		for(;range >= 0 && poss[range] == null; range--);
-		
-		while(range > 0 && poss[range].numOpenNeighbors() != std)
-			range--;
-		
-		return poss[(int)(Math.random()*(range+1))].setRGB(rgb);
-	}
-}
-
-enum Dir{
-	UL(-1, -1),
-	U (0,  -1),
-	UR(1,  -1),
-	R (1,   0),
-	DR(1,   1),
-	D (0,   1),
-	DL(-1,  1),
-	L (-1,  0);
-	
-	byte dx, dy, bn;
-	
-	private Dir(int dx, int dy) {
-		this.dx = (byte)dx;
-		this.dy = (byte)dy;
-		this.bn = RGB.nextByteNum++;
-	}
-
-	public Dir opp() {
-		int size = Dir.values().length;
-		return Dir.values()[(bn+size/2)%size];
-	}
-}
-
-class RGB implements Comparable<RGB>{
-	
-	public static byte nextByteNum = 0;
-	
-	private int rgb;
-	private float hue;
-	
-	public RGB(int r, int g, int b) {
-		rgb = (r&0xFF)<<16 | (g&0xFF)<<8 | (b&0xFF);
-		
-		//set the hue
-		hue = getHue(r,g,b);
-	}
-	
-	public int getRGB() { return rgb; }
-	
-	@Override
-	public int compareTo(RGB o) {
-		if(hue != o.hue)
-			return hue < o.hue ? 1 : -1;
-		return rgb - o.rgb;
+		int i=0;
+		for(;i < dirs.length-1 && Math.random() > .8;i++); //Favor the lower indexes heavily.
+		rgb.setPos(x + dirs[i].dx, y + dirs[i].dy);
 	}
 	
 	private static float getHue(int r, int g, int b) {
@@ -400,4 +325,28 @@ class RGB implements Comparable<RGB>{
 		if(hue < 0) hue += 360;
 		return hue;
 	}
+}
+
+enum Dir{
+	UL(-1, -1, 0),
+	U (0,  -1, 1),
+	UR(1,  -1, 2),
+	R (1,   0, 3),
+	DR(1,   1, 4),
+	D (0,   1, 5),
+	DL(-1,  1, 6),
+	L (-1,  0, 7);
+	
+	private static Dir[] vals = Dir.values();
+	public static Dir[] vals() { return vals; }
+	
+	int dx, dy, bn;
+	
+	private Dir(int dx, int dy, int bn) {
+		this.dx = dx;
+		this.dy = dy;
+		this.bn = bn;
+	}
+
+	public Dir opp() { return Dir.vals()[(bn+4)%8]; }
 }
