@@ -31,24 +31,18 @@ public class Preview {
 			}
 		};
 		panel.setPreferredSize(new Dimension(512, 512));
+		panel.setFocusable(true);
 		preview.setContentPane(panel);
 		preview.pack();
 		preview.setLocationRelativeTo(null);
 		preview.setVisible(true);
 		
+		panel.requestFocus();
+		
 		InputAdapter input = new InputAdapter() {
-			private boolean ALT_DOWN;
 			@Override public void keyPressed(KeyEvent e) {
 				if(e.getKeyCode() == KeyEvent.VK_ESCAPE) 
 					Preview.dispose();
-				if(e.getKeyCode() == KeyEvent.VK_ALT)
-					ALT_DOWN = true;
-			}
-			
-			@Override
-			public void keyReleased(KeyEvent e) {
-				if(e.getKeyCode() == KeyEvent.VK_ALT)
-					ALT_DOWN = false;
 			}
 			
 			private Point mouseRelPos;
@@ -57,11 +51,9 @@ public class Preview {
 			}
 			
 			@Override public void mouseDragged(MouseEvent e) {
-				if(ALT_DOWN) {
-					Point dPos = new Point(e.getX() - mouseRelPos.x, e.getY() - mouseRelPos.y);
-					pos.translate(dPos.x, dPos.y);
-					mouseRelPos = e.getPoint();
-				}
+				Point dPos = new Point(e.getX() - mouseRelPos.x, e.getY() - mouseRelPos.y);
+				pos.translate(dPos.x, dPos.y);
+				mouseRelPos = e.getPoint();
 			}
 
 			private long last = 0;
