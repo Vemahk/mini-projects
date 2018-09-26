@@ -1,8 +1,3 @@
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.Graphics;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -13,8 +8,6 @@ import java.util.LinkedList;
 import java.util.Random;
 
 import javax.imageio.ImageIO;
-import javax.swing.JFrame;
-import javax.swing.JPanel;
 
 public class Art {
 	public static int WIDTH = 1;
@@ -33,6 +26,7 @@ public class Art {
 	public static boolean save;
 	public static boolean repeat;
 	public static byte colorBits = 6;
+	public static byte NUM_START = 1;
 	
 	public static boolean parseArgs(String... args) {
 		for(int i=0;i<args.length;i++) {
@@ -41,14 +35,22 @@ public class Art {
 			if("-bits".equals(args[i]) && args.length > i + 1)
 				try {
 					colorBits = Byte.parseByte(args[i+1]);
+					switch(colorBits) {
+					case 8: Preview.scaleDiv <<= 1;
+					case 7: Preview.scaleDiv <<= 2;
+					default: break;
+					}
 				}catch (NumberFormatException e) { e.printStackTrace(); }
 			if("-save".equals(args[i]))
 				save = true;
-			
 			if("-help".equals(args[i])) {
-				System.out.printf("Available commands:%n%s%n%s%n%s%n", "-repeat", "-bits [num 4-8]", "-save");
+				System.out.printf("Available commands:%n%s%n%s%n%s%n%s%n", "-repeat", "-bits [num 4-8]", "-save", "-numstart [num 1-127]");
 				return true;
 			}
+			if("-numstart".equals(args[i]) && args.length > i + 1)
+				try {
+					NUM_START = Byte.parseByte(args[i+1]);
+				}catch(NumberFormatException e) {e.printStackTrace();}
 		}
 		return false;
 	}
@@ -95,66 +97,65 @@ public class Art {
 		image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
 		
 		//Builds the JFrame to display the preview of the image's construction.
-		buildPreview();
+		Preview.build();
 		
 		System.out.println("Frame built.");
-
-		Runnable generate = () -> {
-			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
-			RGB.build(WIDTH, HEIGHT);
-			for(int i=0;i<colors.length;i++)
-				colors[i].reset();
-			System.out.println("\nBitmap created");
-			
-			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
-			LinkedList<RGB> open = new LinkedList<>();
-			
-			//Places the first pixel randomly from which the rest of the image builds.
-			int i=0;
-			open.add(colors[i++].setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT)));
-			//Iteration time!
-			for(;i < colors.length && colors[i] != null;) {
-				if(!alive) {
-					System.out.println("Interrupted.");
-					break;
-				}
-				
-				RGB next = colors[i++];
-				Iterator<RGB> rIter = open.iterator();
-				
-				RGB closest = null;
-				
-				while(rIter.hasNext()) {
-					RGB rNext = rIter.next();
-					if(!rNext.isOpen()) rIter.remove();
-					else if(closest == null)
-						closest = rNext;
-					else if(rNext.distSqr(next) < closest.distSqr(next))
-						closest = rNext;
-				}
-				closest.setRandomly(next);
-				
-				if(next.isOpen())
-					open.add(next);
-			}
-			
-			System.out.println("Image built.");
-			
-			try {
-				if(save) {
-					saveImage(image);
-					System.out.println("Image written.");
-				}
-			} catch (IOException e) { e.printStackTrace(); }
-		};
 		
 		do {
-			Thread genthread = new Thread(generate, "Generation Thread");
+			Thread genthread = new Thread(() -> {
+				//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
+				RGB.build(WIDTH, HEIGHT);
+				for(int i=0;i<colors.length;i++)
+					colors[i].reset();
+				System.out.println("\nBitmap created");
+				
+				//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
+				LinkedList<RGB> open = new LinkedList<>();
+				
+				//Places the first pixel randomly from which the rest of the image builds.
+				int i=0;
+				for(int x=0;x<NUM_START;x++)
+					open.add(colors[i++].setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT)));
+				//Iteration time!
+				for(;i < colors.length && colors[i] != null;) {
+					if(!alive) {
+						System.out.println("Interrupted");
+						break;
+					}
+					
+					RGB next = colors[i++];
+					Iterator<RGB> rIter = open.iterator();
+					
+					RGB closest = null;
+					
+					while(rIter.hasNext()) {
+						RGB rNext = rIter.next();
+						if(!rNext.isOpen()) rIter.remove();
+						else if(closest == null)
+							closest = rNext;
+						else if(rNext.distSqr(next) < closest.distSqr(next))
+							closest = rNext;
+					}
+					closest.setRandomly(next);
+					
+					if(next.isOpen())
+						open.add(next);
+				}
+				
+				System.out.println("Image built");
+				
+				try {
+					if(save) {
+						saveImage(image);
+						System.out.println("Image written");
+					}
+				} catch (IOException e) { e.printStackTrace(); }
+			}, "Generation Thread");
 			genthread.start();
 			genthread.join();
 		}while(repeat);
 		
-		alive = false;
+		//alive = false;
 	}
 	
 	/**
@@ -172,53 +173,9 @@ public class Art {
 		ImageIO.write(image, "png", outFile);
 	}
 	
-	public static void buildPreview() {
-		JFrame window = new JFrame("Progress Check");
-		window.setUndecorated(true);
-		window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		
-		int renderWidth = 512;
-		int renderHeight = (WIDTH == HEIGHT) ? 512 : 256;
-		JPanel panel = new JPanel() {
-			private static final long serialVersionUID = -5197114419981121255L;
-
-			public void paintComponent(Graphics g) {
-				super.paintComponent(g);
-				if(image == null) return;
-				g.drawImage(image, 0, 0, renderWidth, renderHeight, window);
-			}
-		};
-		panel.setBackground(Color.BLACK);
-		panel.setPreferredSize(new Dimension(renderWidth, renderHeight));
-		window.add(panel);
-
-		window.setResizable(false);
-		window.pack();
-		window.setLocationRelativeTo(null);
-		window.setVisible(true);
-		
-		window.addKeyListener(new KeyAdapter() {
-			@Override public void keyPressed(KeyEvent e) {
-				if(e.getKeyCode() == KeyEvent.VK_ESCAPE) {
-					window.dispose();
-					repeat = false;
-					alive = false;
-				}
-			}
-		});
-		
-		new Thread(() -> {
-			while(alive) {
-				window.repaint();
-				try { Thread.sleep(17); } catch (InterruptedException e) { }
-			}
-		}, "Fractle Repaint Thread").start();
-	}
-	
 }
 
 class RGB{
-	
 	private static RGB[][] board;
 	public static void build(int WIDTH, int HEIGHT) {
 		board = new RGB[WIDTH][HEIGHT];
