@@ -125,6 +125,7 @@ public class Enigma {
 		
 		//Let's just hope the size of the file is less than Integer.MAX_VALUE;
 		byte[] buf = new byte[(int)size];
+		bbuf = ByteBuffer.wrap(buf);
 		fis.read(buf);
 		fis.close();
 		decode(buf);
