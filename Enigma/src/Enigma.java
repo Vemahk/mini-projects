@@ -39,8 +39,10 @@ public class Enigma {
 			return;
 		}
 		
+		//Do not re-encode an encoded file.
+		//But I mean, we could tho. Just... Don't.
 		if(f.getName().endsWith(".lck"))
-			return; //Do not re-encode an encoded file.
+			return;
 		
 		FileInputStream fis = new FileInputStream(f);
 		
@@ -76,8 +78,11 @@ public class Enigma {
 			return;
 		}
 		
+		//Do not decode a file that isn't locked.
+		//This is the reason we aren't encoding encoded files.
+		//The program removes the .lck when it's done decoding.
 		if(!f.getName().endsWith(".lck"))
-			return; //Do not decode a file that isn't locked.
+			return; 
 		
 		FileInputStream fis = new FileInputStream(f);
 		
@@ -100,7 +105,6 @@ public class Enigma {
 		
 		//Let's just hope the size of the file is less than Integer.MAX_VALUE;
 		byte[] buf = new byte[(int)size];
-		bbuf = ByteBuffer.wrap(buf);
 		fis.read(buf);
 		fis.close();
 		machine.decode(buf);
@@ -108,7 +112,7 @@ public class Enigma {
 		File outFile = new File(f.getParentFile(), f.getName().substring(0, f.getName().length()-4));
 		FileOutputStream fos = new FileOutputStream(outFile);
 		
-		fos.write(bbuf.array());
+		fos.write(buf);
 		fos.flush();
 		fos.close();
 		
