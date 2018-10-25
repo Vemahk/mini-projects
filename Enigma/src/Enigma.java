@@ -10,18 +10,11 @@ import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 
 public class Enigma {
-
-	public static final boolean DEBUG = false;
-	
-	public static Random rand;
-	
-	public static Rotor l;
-	public static Rotor m;
-	public static Rotor r;
-	public static Rotor ref;
 	
 	public static void main(String[] args) throws IOException {
-		int code = JOptionPane.showOptionDialog(null, null, "Enigma 1.1", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, new String[]{"Encode", "Decode"}, "Encode");
+		int code = JOptionPane.showOptionDialog(null, null, "Enigma 1.2", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, new String[]{"Encode", "Decode"}, "Encode");
+		if(code == JOptionPane.CLOSED_OPTION)
+			return;
 		
 		JFileChooser fc = new JFileChooser();
 		fc.setCurrentDirectory(new File(System.getProperty("user.home") + "/Desktop/"));
@@ -51,17 +44,8 @@ public class Enigma {
 		
 		FileInputStream fis = new FileInputStream(f);
 		
-		rand = new Random();
-		long seed = 0;
-		rand.setSeed(seed = rand.nextLong() >>> 16);
-		
-		l = new Rotor(shuffle()).init(rand.nextInt(16));
-		m = new Rotor(shuffle()).init(rand.nextInt(16));
-		r = new Rotor(shuffle()).init(rand.nextInt(16));
-		ref = new Rotor(getRefl());
-
-		if(DEBUG)
-			System.out.printf("%s%n%s%n%s%n%s%n", l, m, r, ref);
+		long seed = new Random().nextLong() >>> 16;
+		Machine machine = new Machine(seed);
 		
 		File outFile = new File(f.getParentFile(), f.getName()+ ".lck");
 		FileOutputStream fos = new FileOutputStream(outFile);
@@ -73,7 +57,7 @@ public class Enigma {
 		byte[] buffer = new byte[4096];
 		int len = 0;
 		while((len = fis.read(buffer)) > 0) {
-			encode(buffer, len);
+			machine.encode(buffer, len);
 			fos.write(buffer, 0, len);
 		}
 		
@@ -111,24 +95,15 @@ public class Enigma {
 			return;
 		}
 		
-		rand = new Random(seed);
-
-		l = new Rotor(shuffle()).init(rand.nextInt(16));
-		m = new Rotor(shuffle()).init(rand.nextInt(16));
-		r = new Rotor(shuffle()).init(rand.nextInt(16));
-		ref = new Rotor(getRefl());
-		
-		for(long i=0;i<size*2;i++)
-			if(r.rotate() && m.rotate() && l.rotate());
-		
-		if(DEBUG) System.out.printf("%s%n%s%n%s%n%s%n", l, m, r, ref);
+		Machine machine = new Machine(seed);
+		machine.adjust(size<<1);
 		
 		//Let's just hope the size of the file is less than Integer.MAX_VALUE;
 		byte[] buf = new byte[(int)size];
 		bbuf = ByteBuffer.wrap(buf);
 		fis.read(buf);
 		fis.close();
-		decode(buf);
+		machine.decode(buf);
 		
 		File outFile = new File(f.getParentFile(), f.getName().substring(0, f.getName().length()-4));
 		FileOutputStream fos = new FileOutputStream(outFile);
@@ -139,41 +114,76 @@ public class Enigma {
 		
 		f.delete();
 	}
+}
+
+class Machine{
+	private Rotor left, mid, right, reflect;
+	private Random rand;
 	
-	public static void encode(byte[] in, int len) {
+	public Machine(long seed) {
+		this(new Random(seed));
+	}
+
+	public Machine(Random rand) {
+		this.rand = rand;
+		
+		left = new Rotor(shuffle()).init(rand.nextInt(16));
+		mid = new Rotor(shuffle()).init(rand.nextInt(16));
+		right = new Rotor(shuffle()).init(rand.nextInt(16));
+		reflect = new Rotor(getRefl());
+	}
+	
+	public byte encode(byte b) {
+		byte lb = (byte) ((b & 0xF0) >>> 4);
+		byte rb = (byte) (b & 0xF);
+		
+		lb = translate(lb, true);
+		rb = translate(rb, true);
+		
+		return (byte) (lb << 4 | rb);
+	}
+	
+	public void encode(byte[] in, int len) {
 		for(int i=0;i<in.length && i < len;i++)
 			in[i] = encode(in[i]);
 	}
 	
-	public static byte encode(byte b) {
-		byte left = (byte) ((b & 0xF0) >>> 4);
-		byte right = (byte) (b & 0xF);
+	public byte decode(byte b) {
+		byte lb = (byte) ((b & 0xF0) >>> 4);
+		byte rb = (byte) (b & 0xF);
+
+		rb = translate(rb, false);
+		lb = translate(lb, false);
 		
-		left = Rotor.translate(left, l, m, r, ref, true);
-		right = Rotor.translate(right, l, m, r, ref, true);
-		
-		if(DEBUG) System.out.println();
-		
-		return (byte) (left << 4 | right);
+		return (byte)(lb << 4 | rb); 
 	}
 	
-	public static void decode(byte[] in){
+	public void decode(byte[] in){
 		for(int i=in.length-1;i>=0;i--)
 			in[i] = decode(in[i]);
 	}
 	
-	public static byte decode(byte b) {
-		byte left = (byte) ((b & 0xF0) >>> 4);
-		byte right = (byte) (b & 0xF);
-
-		right = Rotor.translate(right, l, m, r, ref, false);
-		left = Rotor.translate(left, l, m, r, ref, false);
+	public byte translate(byte b, boolean forward) {
+		if(!forward)
+			if(right.rotateBack() && mid.rotateBack() && left.rotateBack());
 		
-		if(DEBUG) System.out.println();
-		return (byte)(left << 4 | right); 
+		b = left.ltr(b);
+		b = mid.ltr(b);
+		b = right.ltr(b);
+		b = reflect.ltr(b);
+		b = right.rtl(b);
+		b = mid.rtl(b);
+		b = left.rtl(b);
+		
+		if(forward) if(right.rotate() && mid.rotate() && left.rotate());
+		return b;
 	}
 	
-	public static byte[] shuffle() {
+	public void adjust(long by) {
+		left.rotate(mid.rotate(right.rotate(by)));
+	}
+	
+	public byte[] shuffle() {
 		byte[] out = new byte[16];
 		for(byte i=1;i<16;i++)
 			out[i] = i;
@@ -185,7 +195,7 @@ public class Enigma {
 		return out;
 	}
 	
-	public static byte[] getRefl() {
+	public byte[] getRefl() {
 		Stack<Byte> stack = new Stack<>();
 		for(byte i=0;i<16;i++)
 			stack.add(rand.nextInt(i+1), i);
@@ -214,22 +224,6 @@ public class Enigma {
 
 class Rotor{
 	
-	public static byte translate(byte b, Rotor l, Rotor m, Rotor r, Rotor ref, boolean forward) {
-		if(!forward)
-			if(r.rotateBack() && m.rotateBack() && l.rotateBack());
-		
-		b = l.ltr(b);
-		b = m.ltr(b);
-		b = r.ltr(b);
-		b = ref.ltr(b);
-		b = r.rtl(b);
-		b = m.rtl(b);
-		b = l.rtl(b);
-		
-		if(forward) if(r.rotate() && m.rotate() && l.rotate());
-		return b;
-	}
-	
 	private byte[] ltr;
 	private byte[] rtl;
 	
@@ -238,7 +232,7 @@ class Rotor{
 	
 	public Rotor(byte... in) {
 		if(in.length != 16)
-			System.out.println("Ya goofed.");
+			System.out.println("Rotors have to be size 16");
 		size = in.length;
 		ltr = new byte[size];
 		rtl = new byte[size];
@@ -256,37 +250,39 @@ class Rotor{
 	
 	public int getOffset() { return offset; }
 	
+	/**
+	 * @param times
+	 * @return The number of times it passed 0. (i.e. the number of times the next rotor should be rotated)
+	 */
+	public long rotate(long times) {
+		int ori = offset;
+		offset = (int) ((offset + times) % size);
+		return times/size + (offset < ori ? 1 : 0);
+	}
+	
 	public boolean rotate() {
-		if(Enigma.DEBUG) System.out.printf("Offset: %d -> %d%n", offset, (offset+1)%size);
 		offset = ++offset % size;
 		return offset == 0;
 	}
 	
 	public boolean rotateBack() {
 		if(--offset < 0) offset+=size;
-		if(Enigma.DEBUG) System.out.printf("Offset: %d -> %d%n", (offset+1)%size, offset);
 		return offset == size-1;
 	}
 	
 	public byte ltr(byte i) {
-		byte ori = i;
 		if((i -= offset) < 0)
 			i+=size;
 
 		i = (byte) ((ltr[i] + offset)%size);
-		if(Enigma.DEBUG)
-			System.out.printf("%d mapped to %d%n", ori, i);
 		return i;
 	}
 	
 	public byte rtl(byte i) {
-		byte ori = i;
 		if((i -= offset) < 0)
 			i+=size;
 
 		i = (byte) ((rtl[i] + offset)%size);
-		if(Enigma.DEBUG)
-			System.out.printf("%d mapped to %d%n", ori, i);
 		return i;
 	}
 	
