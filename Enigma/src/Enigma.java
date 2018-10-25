@@ -9,6 +9,16 @@ import java.util.Stack;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 
+/**
+ * It's a nibble of an enigma, ain't it?
+ * Heh.
+ * I think I'm funny.
+ * 
+ * This program accepts a file (or directory of files) and runs a nibble (hex I suppose) level encryption
+ * on it using the idea of the Enigma Machine used by Germany in WWII.
+ * 
+ * @author Samuel
+ */
 public class Enigma {
 	
 	public static void main(String[] args) throws IOException {
@@ -121,19 +131,21 @@ public class Enigma {
 }
 
 class Machine{
-	private Rotor left, mid, right, reflect;
+	private Rotor[] rotors;
+	private Rotor reflect;
 	private Random rand;
 	
 	public Machine(long seed) {
-		this(new Random(seed));
+		this(new Random(seed), 3);
 	}
 
-	public Machine(Random rand) {
+	public Machine(Random rand, int size) {
 		this.rand = rand;
 		
-		left = new Rotor(shuffle()).init(rand.nextInt(16));
-		mid = new Rotor(shuffle()).init(rand.nextInt(16));
-		right = new Rotor(shuffle()).init(rand.nextInt(16));
+		rotors = new Rotor[size];
+		for(int i=0;i<size;i++)
+			rotors[i] = new Rotor(shuffle()).init(rand.nextInt(16));
+		
 		reflect = new Rotor(getRefl());
 	}
 	
@@ -168,23 +180,27 @@ class Machine{
 	}
 	
 	public byte translate(byte b, boolean forward) {
-		if(!forward)
-			if(right.rotateBack() && mid.rotateBack() && left.rotateBack());
+		if(!forward) 
+			for(int i=0;i < rotors.length && rotors[i].rotateBack(); i++);
 		
-		b = left.ltr(b);
-		b = mid.ltr(b);
-		b = right.ltr(b);
+		int i=0;
+		while(i < rotors.length)
+			b = rotors[i++].ltr(b);
+		
 		b = reflect.ltr(b);
-		b = right.rtl(b);
-		b = mid.rtl(b);
-		b = left.rtl(b);
 		
-		if(forward) if(right.rotate() && mid.rotate() && left.rotate());
+		while(i > 0)
+			b = rotors[--i].rtl(b);
+		
+		if(forward)
+			for(int t=0;t < rotors.length && rotors[t].rotate(); t++);
 		return b;
 	}
 	
 	public void adjust(long by) {
-		left.rotate(mid.rotate(right.rotate(by)));
+		//This is the trashiest kind of for-loop
+		//Don't be like me.
+		for(int i=0; i < rotors.length && (by = rotors[i++].rotate(by)) > 0;);
 	}
 	
 	public byte[] shuffle() {
@@ -236,7 +252,7 @@ class Rotor{
 	
 	public Rotor(byte... in) {
 		if(in.length != 16)
-			System.out.println("Rotors have to be size 16");
+			System.err.println("Rotors were not initalized correctly...");
 		size = in.length;
 		ltr = new byte[size];
 		rtl = new byte[size];
