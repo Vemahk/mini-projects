@@ -1,3 +1,4 @@
+package me.vem.art;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Point;
@@ -6,6 +7,8 @@ import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 import javax.swing.JFrame;
 import javax.swing.JPanel;
@@ -19,7 +22,14 @@ public class Preview {
 	private static JFrame preview;
 	public static void build() {
 		preview = new JFrame("Fractle Preview");
-		preview.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		preview.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		
+		preview.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent e) {
+				Preview.dispose();
+			}
+		});
 		
 		JPanel panel = new JPanel() {
 			private static final long serialVersionUID = -5197114419981121255L;
