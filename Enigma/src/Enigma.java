@@ -1,8 +1,6 @@
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.io.RandomAccessFile;
 import java.util.Random;
 import java.util.Stack;
 
@@ -22,7 +20,7 @@ import javax.swing.JOptionPane;
 public class Enigma {
 	
 	public static void main(String[] args) throws IOException {
-		int code = JOptionPane.showOptionDialog(null, null, "Enigma 1.2", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, new String[]{"Encode", "Decode"}, "Encode");
+		int code = JOptionPane.showOptionDialog(null, null, "Enigma 1.3", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, new String[]{"Encode", "Decode"}, "Encode");
 		if(code == JOptionPane.CLOSED_OPTION)
 			return;
 		
@@ -54,30 +52,24 @@ public class Enigma {
 		if(f.getName().endsWith(".lck"))
 			return;
 		
-		FileInputStream fis = new FileInputStream(f);
+		RandomAccessFile raf = new RandomAccessFile(f, "rw");
 		
 		long seed = new Random().nextLong() >>> 16;
 		Machine machine = new Machine(seed);
 		
-		File outFile = new File(f.getParentFile(), f.getName()+ ".lck");
-		FileOutputStream fos = new FileOutputStream(outFile);
-		
-		ByteBuffer buf = ByteBuffer.allocate(8);
-		buf.putLong(seed);
-		fos.write(buf.array());
-		
 		byte[] buffer = new byte[4096];
 		int len = 0;
-		while((len = fis.read(buffer)) > 0) {
+		while((len = raf.read(buffer)) > 0) {
 			machine.encode(buffer, len);
-			fos.write(buffer, 0, len);
+			
+			raf.seek(raf.getFilePointer() - len);
+			raf.write(buffer, 0, len);
 		}
 		
-		fis.close();
-		fos.flush();
-		fos.close();
-
-		f.delete();
+		raf.writeLong(seed);
+		raf.close();
+		
+		f.renameTo(new File(f.getParentFile(), f.getName() + ".lck"));
 	}
 	
 	public static void decode(File f) throws IOException {
@@ -94,39 +86,30 @@ public class Enigma {
 		if(!f.getName().endsWith(".lck"))
 			return; 
 		
-		FileInputStream fis = new FileInputStream(f);
+		RandomAccessFile raf = new RandomAccessFile(f, "rw");
+		raf.seek(raf.length() - 8);
+		long seed = raf.readLong();
 		
-		long seed = 0;
-		long size = f.length() - 8;
-		
-		ByteBuffer bbuf = ByteBuffer.allocate(8);
-		
-		fis.read(bbuf.array());
-		seed = bbuf.getLong();
-		
-		if(seed == 0) {
-			System.out.println("Seed not found...");
-			fis.close();
-			return;
-		}
+		raf.setLength(raf.length() - 8);
+		raf.seek(0);
 		
 		Machine machine = new Machine(seed);
-		machine.adjust(size<<1);
 		
 		//Let's just hope the size of the file is less than Integer.MAX_VALUE;
-		byte[] buf = new byte[(int)size];
-		fis.read(buf);
-		fis.close();
-		machine.decode(buf);
+		byte[] buf = new byte[4096];
+		int len = 0;
+		while((len = raf.read(buf)) > 0) {
+			machine.encode(buf, len);
+			
+			raf.seek(raf.getFilePointer() - len);
+			raf.write(buf, 0, len);
+		}
 		
-		File outFile = new File(f.getParentFile(), f.getName().substring(0, f.getName().length()-4));
-		FileOutputStream fos = new FileOutputStream(outFile);
+		raf.close();
 		
-		fos.write(buf);
-		fos.flush();
-		fos.close();
-		
-		f.delete();
+		String fName = f.getName();
+		fName = fName.substring(0, fName.lastIndexOf('.'));
+		f.renameTo(new File(f.getParentFile(), fName));
 	}
 }
 
@@ -144,19 +127,13 @@ class Machine{
 		
 		rotors = new Rotor[size];
 		for(int i=0;i<size;i++)
-			rotors[i] = new Rotor(shuffle()).init(rand.nextInt(16));
+			rotors[i] = new Rotor(rand.nextInt(16), shuffle());
 		
 		reflect = new Rotor(getRefl());
 	}
 	
 	public byte encode(byte b) {
-		byte lb = (byte) ((b & 0xF0) >>> 4);
-		byte rb = (byte) (b & 0xF);
-		
-		lb = translate(lb, true);
-		rb = translate(rb, true);
-		
-		return (byte) (lb << 4 | rb);
+		return (byte) (translate((byte) ((b & 0xF0) >>> 4)) << 4 | translate((byte) (b & 0xF)));
 	}
 	
 	public void encode(byte[] in, int len) {
@@ -164,25 +141,7 @@ class Machine{
 			in[i] = encode(in[i]);
 	}
 	
-	public byte decode(byte b) {
-		byte lb = (byte) ((b & 0xF0) >>> 4);
-		byte rb = (byte) (b & 0xF);
-
-		rb = translate(rb, false);
-		lb = translate(lb, false);
-		
-		return (byte)(lb << 4 | rb); 
-	}
-	
-	public void decode(byte[] in){
-		for(int i=in.length-1;i>=0;i--)
-			in[i] = decode(in[i]);
-	}
-	
-	public byte translate(byte b, boolean forward) {
-		if(!forward) 
-			for(int i=0;i < rotors.length && rotors[i].rotateBack(); i++);
-		
+	public byte translate(byte b) {
 		int i=0;
 		while(i < rotors.length)
 			b = rotors[i++].ltr(b);
@@ -192,8 +151,7 @@ class Machine{
 		while(i > 0)
 			b = rotors[--i].rtl(b);
 		
-		if(forward)
-			for(int t=0;t < rotors.length && rotors[t].rotate(); t++);
+		adjust(1);
 		return b;
 	}
 	
@@ -240,73 +198,57 @@ class Machine{
 		arr[a] ^= c;
 		arr[b] ^= c;
 	}
-}
+	
+	private static class Rotor{
+		
+		private byte[] ltr, rtl;
+		private int size, offset;
+		
+		public Rotor(byte... in) { this(0, in); }
+		
+		public Rotor(int initOffset, byte... in) {
+			if(in.length != 16)
+				throw new IllegalArgumentException("Rotors in this instance should be of size 16.");
+			size = in.length;
+			ltr = new byte[size];
+			rtl = new byte[size];
+			for(byte i=0;i<size;i++) {
+				ltr[i] = in[i];
+				rtl[in[i]] = i;
+			}
+			
+			rotate(initOffset);
+		}
+		
+		/**
+		 * Rotates this rotor 't' times.
+		 * @param t
+		 * @return The number of times it passed 0. (i.e. the number of times the next rotor in the sequence should be rotated)
+		 */
+		public long rotate(long t) {int ori = offset;
+			offset = (int) ((offset + t) % size);
+			return t/size + (offset < ori ? 1 : 0);
+		}
+		
+		public byte ltr(byte i) {
+			if((i -= offset) < 0)
+				i+=size;
 
-class Rotor{
-	
-	private byte[] ltr;
-	private byte[] rtl;
-	
-	private int size;
-	private int offset;
-	
-	public Rotor(byte... in) {
-		if(in.length != 16)
-			System.err.println("Rotors were not initalized correctly...");
-		size = in.length;
-		ltr = new byte[size];
-		rtl = new byte[size];
-		for(byte i=0;i<size;i++) {
-			ltr[i] = in[i];
-			rtl[in[i]] = i;
+			i = (byte) ((ltr[i] + offset)%size);
+			return i;
+		}
+		
+		public byte rtl(byte i) {
+			if((i -= offset) < 0)
+				i+=size;
+
+			i = (byte) ((rtl[i] + offset)%size);
+			return i;
+		}
+		
+		public String toString() {
+			return String.format("%s%n%s%nOffset: %d", new String(ltr), new String(rtl), offset);
 		}
 	}
-	
-	public Rotor init(int off) {
-		for(int i=0;i<off;i++)
-			rotate();
-		return this;
-	}
-	
-	public int getOffset() { return offset; }
-	
-	/**
-	 * @param times
-	 * @return The number of times it passed 0. (i.e. the number of times the next rotor should be rotated)
-	 */
-	public long rotate(long times) {
-		int ori = offset;
-		offset = (int) ((offset + times) % size);
-		return times/size + (offset < ori ? 1 : 0);
-	}
-	
-	public boolean rotate() {
-		offset = ++offset % size;
-		return offset == 0;
-	}
-	
-	public boolean rotateBack() {
-		if(--offset < 0) offset+=size;
-		return offset == size-1;
-	}
-	
-	public byte ltr(byte i) {
-		if((i -= offset) < 0)
-			i+=size;
-
-		i = (byte) ((ltr[i] + offset)%size);
-		return i;
-	}
-	
-	public byte rtl(byte i) {
-		if((i -= offset) < 0)
-			i+=size;
-
-		i = (byte) ((rtl[i] + offset)%size);
-		return i;
-	}
-	
-	public String toString() {
-		return String.format("%s%n%s%nOffset: %d", new String(ltr), new String(rtl), offset);
-	}
 }
+
