@@ -39,6 +39,12 @@ public class Enigma {
 		else if(code==1) decode(f);
 	}
 	
+	/**
+	 * Runs a hex level encryption on the given file, or if the given file object represents a directory, then it recursively runs the encryption on all sub-files. <br>
+	 * Note this method will not encrypt the file if it sees that the file is already encrypted. The way it tells is if the file extension is ".lck".
+	 * @param f The given file or directory to encrypt.
+	 * @throws IOException If there are any problems in regards to file io. Could be either that the file doesn't exist or there was a read/write error.
+	 */
 	public static void encode(File f) throws IOException {
 
 		if(f.isDirectory()) {
@@ -47,8 +53,7 @@ public class Enigma {
 			return;
 		}
 		
-		//Do not re-encode an encoded file.
-		//But I mean, we could tho. Just... Don't.
+		//Do not re-encode an encoded file. Not that it isn't possible, just that it is without the design of this program to do so.
 		if(f.getName().endsWith(".lck"))
 			return;
 		
@@ -66,12 +71,19 @@ public class Enigma {
 			raf.write(buffer, 0, len);
 		}
 		
+		//Write the seed to the end of the file.
 		raf.writeLong(seed);
 		raf.close();
 		
 		f.renameTo(new File(f.getParentFile(), f.getName() + ".lck"));
 	}
 	
+	/**
+	 * Decodes an encrypted file, or sub-files of a directory, that were encrypted using the above function. <br>
+	 * Note that the file will be decoded if this method does not recognize it as encrypted. The way this method tells is if the extension is ".lck".
+	 * @param f The file to decode.
+	 * @throws IOException If there is any io problem. This could be that the file does not exist, or there was a problem while read/writing.
+	 */
 	public static void decode(File f) throws IOException {
 		
 		if(f.isDirectory()) {
@@ -81,12 +93,14 @@ public class Enigma {
 		}
 		
 		//Do not decode a file that isn't locked.
-		//This is the reason we aren't encoding encoded files.
+		//This is the one of the reasons we aren't encoding encoded files.
 		//The program removes the .lck when it's done decoding.
 		if(!f.getName().endsWith(".lck"))
 			return; 
 		
 		RandomAccessFile raf = new RandomAccessFile(f, "rw");
+		
+		//Read the seed from the end of the file.
 		raf.seek(raf.length() - 8);
 		long seed = raf.readLong();
 		
@@ -95,7 +109,6 @@ public class Enigma {
 		
 		Machine machine = new Machine(seed);
 		
-		//Let's just hope the size of the file is less than Integer.MAX_VALUE;
 		byte[] buf = new byte[4096];
 		int len = 0;
 		while((len = raf.read(buf)) > 0) {
@@ -107,16 +120,24 @@ public class Enigma {
 		
 		raf.close();
 		
+		//Rename the file to exclude the .lck extension.
 		String fName = f.getName();
 		fName = fName.substring(0, fName.lastIndexOf('.'));
 		f.renameTo(new File(f.getParentFile(), fName));
 	}
 }
 
+/**
+ * This is the Enigma Machine object in-concept. Its subclass, Rotor, is supposed to represent the rotors
+ * within the machine. They take inputs of bytes and using 'connections' change the bytes around depending
+ * on their settings and whether the 'signal' is passing from left to right or right to left. 
+ * 
+ * @author Samuel
+ */
 class Machine{
-	private Rotor[] rotors;
-	private Rotor reflect;
-	private Random rand;
+	private Rotor[] rotors; //The rotors of the machine.
+	private Rotor reflect; //The reflection rotor.
+	private Random rand; //The random object used for creation.
 	
 	public Machine(long seed) {
 		this(new Random(seed), 3);
@@ -132,15 +153,32 @@ class Machine{
 		reflect = new Rotor(getRefl());
 	}
 	
+	/**
+	 * Encodes a single byte, b, be independently encoding the two hex digits that represent it.
+	 * @param b The byte to be encoded.
+	 * @return The encoded byte.
+	 */
 	public byte encode(byte b) {
 		return (byte) (translate((byte) ((b & 0xF0) >>> 4)) << 4 | translate((byte) (b & 0xF)));
 	}
 	
+	/**
+	 * Encode a set of bytes, starting at index 0 of the array and going to len-1.
+	 * @param in The array of bytes to encode.
+	 * @param len The number of bytes within the array to encode.
+	 */
 	public void encode(byte[] in, int len) {
 		for(int i=0;i<in.length && i < len;i++)
 			in[i] = encode(in[i]);
 	}
 	
+	/**
+	 * This is the method that encodes a specific hex digits. It passes it through each of the rotors, 
+	 * left to right, then through the reflection rotor, and then back through the rotors right-to-left. 
+	 * It then rotates as many rotors as is warranted by the current state of the machine.
+	 * @param b
+	 * @return
+	 */
 	public byte translate(byte b) {
 		int i=0;
 		while(i < rotors.length)
@@ -155,12 +193,19 @@ class Machine{
 		return b;
 	}
 	
+	/**
+	 * Rotates the machine 'by' times.
+	 * @param by
+	 */
 	public void adjust(long by) {
-		//This is the trashiest kind of for-loop
-		//Don't be like me.
+		//This may be the most beautiful for-loop I have ever written in my life.
 		for(int i=0; i < rotors.length && (by = rotors[i++].rotate(by)) > 0;);
 	}
 	
+	
+	/**
+	 * @return A byte array with contents 0 through 15, inclusive, in a random order.
+	 */
 	public byte[] shuffle() {
 		byte[] out = new byte[16];
 		for(byte i=1;i<16;i++)
@@ -173,6 +218,10 @@ class Machine{
 		return out;
 	}
 	
+	/**
+	 * @return A byte array made specifically for the reflection rotor. Because of the nature of the
+	 * reflection rotor, this could not be random like the other rotors.
+	 */
 	public byte[] getRefl() {
 		Stack<Byte> stack = new Stack<>();
 		for(byte i=0;i<16;i++)
@@ -193,12 +242,25 @@ class Machine{
 		return out;
 	}
 	
+	/**
+	 * Swaps the contents of indexes a and b within the array arr.
+	 * @param arr
+	 * @param a
+	 * @param b
+	 */
 	public static void swap(byte[] arr, int a, int b) {
 		byte c = (byte) (arr[a] ^ arr[b]);
 		arr[a] ^= c;
 		arr[b] ^= c;
 	}
 	
+	/**
+	 * The rotor class which is used by the Machine class. For the purposes of this program, it is 
+	 * forced to only accept an array of 16 bytes, which it presumes contains contents 0 to 15 inclusive. 
+	 * It then initializes its internal arrays and offset to get ready for processing incoming hex digits. 
+	 * @author Samuel
+	 *
+	 */
 	private static class Rotor{
 		
 		private byte[] ltr, rtl;
@@ -222,7 +284,7 @@ class Machine{
 		
 		/**
 		 * Rotates this rotor 't' times.
-		 * @param t
+		 * @param t The number of turns to rotate this rotor.
 		 * @return The number of times it passed 0. (i.e. the number of times the next rotor in the sequence should be rotated)
 		 */
 		public long rotate(long t) {int ori = offset;
@@ -230,6 +292,11 @@ class Machine{
 			return t/size + (offset < ori ? 1 : 0);
 		}
 		
+		/**
+		 * Translates a hex digit that is passing from the 'left' to the 'right' side of this rotor.
+		 * @param i The hex digit to be translated.
+		 * @return The encoded hex digit.
+		 */
 		public byte ltr(byte i) {
 			if((i -= offset) < 0)
 				i+=size;
@@ -238,6 +305,11 @@ class Machine{
 			return i;
 		}
 		
+		/**
+		 * Translates a hex digit that is passing from the 'right' to the 'left' side of this rotor.
+		 * @param i The hex digit to be translated.
+		 * @return The encoded hex digit.
+		 */
 		public byte rtl(byte i) {
 			if((i -= offset) < 0)
 				i+=size;
@@ -246,9 +318,11 @@ class Machine{
 			return i;
 		}
 		
+		/**
+		 * Used mostly for debug in this program. Is not used within this implementation of the program.
+		 */
 		public String toString() {
 			return String.format("%s%n%s%nOffset: %d", new String(ltr), new String(rtl), offset);
 		}
 	}
 }
-
