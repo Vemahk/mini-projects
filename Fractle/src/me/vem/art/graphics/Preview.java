@@ -1,4 +1,4 @@
-package me.vem.art;
+package me.vem.art.graphics;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Point;
@@ -11,8 +11,9 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 import javax.swing.JFrame;
-import javax.swing.JPanel;
 import javax.swing.event.MouseInputListener;
+
+import me.vem.art.Fractle;
 
 public class Preview {
 
@@ -20,6 +21,7 @@ public class Preview {
 	public static int scaleDiv = 1;
 	
 	private static JFrame preview;
+	
 	public static void build() {
 		preview = new JFrame("Fractle Preview");
 		preview.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -31,23 +33,22 @@ public class Preview {
 			}
 		});
 		
-		JPanel panel = new JPanel() {
-			private static final long serialVersionUID = -5197114419981121255L;
+		BufferedCanvas canvas = new BufferedCanvas(preview, new Dimension(512, 512)) {
+			private static final long serialVersionUID = 3212996678815410337L;
 
-			public void paintComponent(Graphics g) {
-				super.paintComponent(g);
-				if(Art.image == null) return;
-				g.drawImage(Art.image, pos.x, pos.y, Art.WIDTH / scaleDiv, Art.HEIGHT / scaleDiv, preview);
+			public void render(Graphics g) {
+				if(Fractle.image == null)
+					return;
+				
+				g.drawImage(Fractle.image, pos.x, pos.y, Fractle.WIDTH / scaleDiv, Fractle.HEIGHT / scaleDiv, preview);
 			}
 		};
-		panel.setPreferredSize(new Dimension(512, 512));
-		panel.setFocusable(true);
-		preview.setContentPane(panel);
-		preview.pack();
+		
+		canvas.setFocusable(true);
 		preview.setLocationRelativeTo(null);
 		preview.setVisible(true);
 		
-		panel.requestFocus();
+		canvas.requestFocus();
 		
 		InputAdapter input = new InputAdapter() {
 			@Override public void keyPressed(KeyEvent e) {
@@ -61,6 +62,9 @@ public class Preview {
 			}
 			
 			@Override public void mouseDragged(MouseEvent e) {
+				if(mouseRelPos == null)
+					mouseRelPos = e.getPoint();
+				
 				Point dPos = new Point(e.getX() - mouseRelPos.x, e.getY() - mouseRelPos.y);
 				pos.translate(dPos.x, dPos.y);
 				mouseRelPos = e.getPoint();
@@ -88,23 +92,26 @@ public class Preview {
 			}
 		};
 		
-		panel.addKeyListener(input);
-		panel.addMouseListener(input);
-		panel.addMouseMotionListener(input);
-		panel.addMouseWheelListener(input);
+		canvas.addKeyListener(input);
+		canvas.addMouseListener(input);
+		canvas.addMouseMotionListener(input);
+		canvas.addMouseWheelListener(input);
 		
 		new Thread(() -> {
-			while(Art.alive) {
-				preview.repaint();
-				try { Thread.sleep(17); } catch (InterruptedException e) { }
+			while(Fractle.alive) {
+				long dt = canvas.render();
+				
+				long sleep = 17 - dt;
+				if(sleep > 0) try { Thread.sleep(sleep); } catch (InterruptedException e) { }
 			}
 		}, "Fractle Repaint Thread").start();
 	}
 	
 	public static void dispose() {
+		preview.setVisible(false);
 		preview.dispose();
-		Art.repeat = false;
-		Art.alive = false;
+		Fractle.repeat = false;
+		Fractle.alive = false;
 	}
 }
 

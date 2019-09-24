@@ -5,38 +5,46 @@ import java.util.Comparator;
 
 public class RGB{
 	
+	private static int start = 0;
 	private static int offset = 0;
-	private static RGB[] allRGB;
-	public static RGB getNth(int n) {
-		if(allRGB == null) return null;
-		return allRGB[(n + offset) % allRGB.length];
+	private static RGB[] colors;
+
+	public static boolean hasNext() {
+		return offset < colors.length;
 	}
 	
-	public static int numRGB() { return allRGB.length; }
+	public static RGB getNext() {
+		if(colors == null || !hasNext()) return null;
+		RGB next = colors[(start + offset++) % colors.length];
+		
+		return next;
+	}
 	
 	public static void buildRGBLookup(int colorBits) {
-		if(allRGB == null) {
+		if(colors == null) {
 			//Sorted set of all colors.
-			allRGB = new RGB[1 << (colorBits * 3)];
-			offset = (int)(Math.random() * allRGB.length);
+			colors = new RGB[1 << (colorBits * 3)];
+
+			start = (int)(Math.random() * colors.length);
+			offset = 0;
 			
 			int colorBitsInv = 8 - colorBits;
 			final int maxVal = 1<<colorBits;
 			
-			//Gather all x-bit colors into the TreeSet.
+			//Gather all x-bit colors into the array.
 			for(int i=0, r = 0, g = 0, b = 0;;) {
-				allRGB[i++] = new RGB(r<<colorBitsInv, g<<colorBitsInv, b<<colorBitsInv);
+				colors[i++] = new RGB(r<<colorBitsInv, g<<colorBitsInv, b<<colorBitsInv);
 				
 				if(++r == maxVal) {
 					r = 0;
 					if(++g == maxVal) {
 						g = 0;
 						if(++b == maxVal) { //All possible colors reached; end.
-							Arrays.sort(allRGB, new Comparator<RGB>() { 
-								@Override public int compare(RGB o1, RGB o2) {
-									if(o1.getHue() != o2.getHue())
-										return o1.getHue() < o2.getHue() ? 1 : -1;
-									return o1.getRGB() - o2.getRGB();
+							Arrays.sort(colors, new Comparator<RGB>() { 
+								@Override public int compare(RGB c1, RGB c2) {
+									if(c1.getHue() != c2.getHue())
+										return c1.getHue() < c2.getHue() ? 1 : -1;
+									return c1.getRGB() - c2.getRGB();
 								}
 							});
 							System.out.printf("Array built | %d colors%n", i);
@@ -48,10 +56,11 @@ public class RGB{
 		}
 	}
 	
-	public static void resetAllRGB() {
-		for(RGB rgb : allRGB)
+	public static void resetAll() {
+		for(RGB rgb : colors)
 			rgb.reset();
-		offset = (int)(Math.random() * allRGB.length);
+		start = (int)(Math.random() * colors.length);
+		offset = 0;
 	}
 	
 	private static RGB[][] board;
@@ -78,7 +87,7 @@ public class RGB{
 	
 	public void reset() {
 		x = y = -1;
-		numOpen=8;
+		numOpen = 8;
 		status = 0;
 	}
 	
@@ -103,12 +112,12 @@ public class RGB{
 		this.x = (short)x;
 		this.y = (short)y;
 		board[x][y] = this;
-		Art.image.setRGB(x, y, getRGB());
+		Fractle.image.setRGB(x, y, getRGB());
 		
 		for(Dir dir : Dir.vals) {
 			int nx = x + dir.dx;
 			int ny = y + dir.dy;
-			if(nx < 0 || nx >= Art.WIDTH || ny < 0 || ny >= Art.HEIGHT) {
+			if(nx < 0 || nx >= Fractle.WIDTH || ny < 0 || ny >= Fractle.HEIGHT) {
 				setNeighbor(dir);
 				continue;
 			}
