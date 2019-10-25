@@ -53,6 +53,8 @@ public class Pareto {
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		
 		JPanel display = new JPanel() {
+			private static final long serialVersionUID = -8790802499943903985L;
+
 			@Override
 			public void paintComponent(Graphics g) {
 				super.paintComponent(g);

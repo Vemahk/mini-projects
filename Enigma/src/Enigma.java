@@ -232,11 +232,7 @@ class Machine{
 			byte r = stack.pop();
 			if(stack.isEmpty())
 				out[r] = r;
-			else {
-				byte r2 = stack.pop();
-				out[r] = r2;
-				out[r2] = r;
-			}
+			else out[out[r] = stack.pop()] = r; //Also not originally written like this, but refactoring is fun.
 		}
 		
 		return out;
@@ -274,10 +270,9 @@ class Machine{
 			size = in.length;
 			ltr = new byte[size];
 			rtl = new byte[size];
-			for(byte i=0;i<size;i++) {
-				ltr[i] = in[i];
-				rtl[in[i]] = i;
-			}
+			
+			for(byte i=0;i<size;i++) 
+				rtl[ltr[i] = in[i]] = i; //Mind you, this was not originally written like this. I just changed it to this because I thought it'd look cool. I wasn't disappointed.
 			
 			rotate(initOffset);
 		}
@@ -287,7 +282,8 @@ class Machine{
 		 * @param t The number of turns to rotate this rotor.
 		 * @return The number of times it passed 0. (i.e. the number of times the next rotor in the sequence should be rotated)
 		 */
-		public long rotate(long t) {int ori = offset;
+		public long rotate(long t) {
+			int ori = offset;
 			offset = (int) ((offset + t) % size);
 			return t/size + (offset < ori ? 1 : 0);
 		}
@@ -300,9 +296,8 @@ class Machine{
 		public byte ltr(byte i) {
 			if((i -= offset) < 0)
 				i+=size;
-
-			i = (byte) ((ltr[i] + offset)%size);
-			return i;
+			
+			return i = (byte) ((ltr[i] + offset)%size);
 		}
 		
 		/**
@@ -314,8 +309,7 @@ class Machine{
 			if((i -= offset) < 0)
 				i+=size;
 
-			i = (byte) ((rtl[i] + offset)%size);
-			return i;
+			return i = (byte) ((rtl[i] + offset)%size);
 		}
 		
 		/**
