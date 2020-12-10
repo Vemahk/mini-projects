@@ -76,16 +76,23 @@ public class Fractle {
 		
 		do {
 			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
-			RGB.build(WIDTH, HEIGHT);
+			Pixel.build(WIDTH, HEIGHT);
 			RGB.resetAll();
+			
 			System.out.println("\nBitmap created");
 			
 			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
 			LinkedList<RGB> open = new LinkedList<>();
 			
 			//Places the first pixel randomly from which the rest of the image builds.
-			for(int x=0;x<NUM_START;x++)
-				open.add(RGB.getNext().setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT)));
+			for(int x=0;x<NUM_START;x++) {
+			    Pixel pixel = null;
+			    while(pixel == null || pixel.isSet())
+			        pixel = Pixel.getPixel(rand.nextInt(WIDTH), rand.nextInt(HEIGHT));
+			    
+			    pixel.setColor(RGB.getNext());
+			}
+			
 			//Iteration time!
 			for(RGB next = RGB.getNext(); next != null; next = RGB.getNext()) {
 				if(!alive) {
@@ -105,6 +112,7 @@ public class Fractle {
 					else if(rNext.distSqr(next) < closest.distSqr(next))
 						closest = rNext;
 				}
+				
 				closest.setRandomly(next);
 				
 				if(next.isOpen())
