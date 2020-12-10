@@ -77,9 +77,8 @@ public class Program {
         RandomAccessFile raf = new RandomAccessFile(f, "rw");
         byte[] seed = new byte[8];
         new Random().nextBytes(seed);
-
-        EnigmaCipher cipher = new EnigmaCipher();
-        cipher.setup(seed);
+        
+        EnigmaCipher cipher = (EnigmaCipher)new EnigmaCipher().setup(seed);
 
         byte[] buffer = new byte[4096];
         int len = 0;

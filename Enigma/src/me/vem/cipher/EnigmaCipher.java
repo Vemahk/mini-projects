@@ -8,7 +8,7 @@ public class EnigmaCipher implements Cipher{
 	private Machine machine;
 	
 	@Override
-	public void setup(byte[] key) {
+	public Cipher setup(byte[] key) {
 		if(machine != null)
 			throw new RuntimeException("Cipher has already been setup.");
 		
@@ -23,11 +23,15 @@ public class EnigmaCipher implements Cipher{
 		long l = buf.getLong();
 		
 		machine = new Machine(l);
+		return this;
 	}
 
 	@Override
-	public void translate(byte[] b, int len, boolean encrypt) {
-	    translate(b, len);
+	public byte translate(byte b, boolean encrypt) {
+	    if(machine == null)
+	        throw new RuntimeException("Could not translate through EnigmaCipher - Machine has not been built.");
+	    
+	    return machine.encode(b);
 	}
 	
 	public void translate(byte[] b, int len) {
@@ -110,7 +114,6 @@ public class EnigmaCipher implements Cipher{
 			//This may be the most beautiful for-loop I have ever written in my life.
 			for(int i=0; i < rotors.length && (by = rotors[i++].rotate(by)) > 0;);
 		}
-		
 		
 		/**
 		 * @return A byte array with contents 0 through 15, inclusive, in a random order.

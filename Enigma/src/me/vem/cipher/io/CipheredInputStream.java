@@ -15,9 +15,6 @@ public class CipheredInputStream extends IntermediaryInputStream {
 
     @Override
     public byte handle(byte b) {
-        
-        
-        
-        return 0;
+        return cipher.translate(b, false);
     }
 }

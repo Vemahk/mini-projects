@@ -3,27 +3,25 @@ import java.nio.ByteBuffer;
 
 public interface Cipher {
 	
-	void setup(byte[] key);
-	void translate(byte[] b, int len, boolean encrypt);
+    Cipher setup(byte[] key);
+	byte translate(byte b, boolean encrypt);
 	
-	default void setup(long l) {
+	default void translate(byte[] b, int len, boolean encrypt) {
+	    for(int i=0;i<len;i++)
+	        b[i] = translate(b[i], encrypt);
+	}
+	
+	default Cipher setup(long l) {
 		byte[] arr = new byte[8];
 		ByteBuffer buf = ByteBuffer.wrap(arr);
 		buf.putLong(l);
-		setup(arr);
+		return setup(arr);
 	}
 	
-	default void setup(int i) {
+	default Cipher setup(int i) {
 		byte[] arr = new byte[4];
 		ByteBuffer buf = ByteBuffer.wrap(arr);
 		buf.putInt(i);
-		setup(arr);
-	}
-	
-	default byte translate(byte b, boolean encrypt) {
-		byte[] tmp = new byte[1];
-		tmp[0] = b;
-		translate(tmp, 1, encrypt);
-		return tmp[0];
+		return setup(arr);
 	}
 }
