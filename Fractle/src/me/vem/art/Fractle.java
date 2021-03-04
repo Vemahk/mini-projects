@@ -3,12 +3,12 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.Random;
 
 import javax.imageio.ImageIO;
 
 import me.vem.art.graphics.Preview;
+import me.vem.art.struc.OpenPixelList;
 
 public class Fractle {
 	public static int WIDTH = 1;
@@ -81,8 +81,7 @@ public class Fractle {
 			
 			System.out.println("\nBitmap created");
 			
-			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
-			LinkedList<RGB> open = new LinkedList<>();
+			Pixel pointOfOrigin = null;
 			
 			//Places the first pixel randomly from which the rest of the image builds.
 			for(int x=0;x<NUM_START;x++) {
@@ -91,32 +90,39 @@ public class Fractle {
 			        pixel = Pixel.getPixel(rand.nextInt(WIDTH), rand.nextInt(HEIGHT));
 			    
 			    pixel.setColor(RGB.getNext());
+			    
+			    if(pointOfOrigin == null)
+			        pointOfOrigin = pixel;
 			}
 			
 			//Iteration time!
-			for(RGB next = RGB.getNext(); next != null; next = RGB.getNext()) {
+			for(RGB nextColor = RGB.getNext(); nextColor != null; nextColor = RGB.getNext()) {
 				if(!alive) {
 					System.out.println("Interrupted");
 					break;
 				}
 				
-				Iterator<RGB> rIter = open.iterator();
+				Iterator<Pixel> iter = OpenPixelList.getInstance().iterator();
 				
-				RGB closest = null;
+				Pixel closestPixel = null;
+				int closestDistSqr = -1;
 				
-				while(rIter.hasNext()) {
-					RGB rNext = rIter.next();
-					if(!rNext.isOpen()) rIter.remove();
-					else if(closest == null)
-						closest = rNext;
-					else if(rNext.distSqr(next) < closest.distSqr(next))
-						closest = rNext;
+				while(iter.hasNext()) {
+					Pixel nextPixel = iter.next();
+					int nextDistSqr = nextPixel.distSqrTo(nextColor);
+					if(closestPixel == null) {
+                        closestPixel = nextPixel;
+                        closestDistSqr = nextDistSqr;
+					} else if(nextDistSqr == closestDistSqr) {
+					    if(nextPixel.trueDistSqr(pointOfOrigin) < closestPixel.trueDistSqr(pointOfOrigin))
+					        closestPixel = nextPixel;
+					} else if(nextDistSqr < closestDistSqr) {
+					    closestPixel = nextPixel;
+					    closestDistSqr = nextDistSqr;
+					}
 				}
 				
-				closest.setRandomly(next);
-				
-				if(next.isOpen())
-					open.add(next);
+				closestPixel.setColor(nextColor);
 			}
 			
 			System.out.println("Image built");

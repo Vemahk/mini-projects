@@ -1,7 +1,7 @@
 package me.vem.art;
 
 import java.awt.image.BufferedImage;
-import java.util.Queue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import me.vem.art.struc.OpenPixelList;
 import me.vem.art.struc.OpenPixelList.OpenPixelNode;
@@ -33,35 +33,33 @@ public class Pixel {
         return board[x][y];
     }
     
-    public static Queue<Pixel> getNClosestOpenPixels(int n){
-        
-    }
-    
     private short x, y;
     private RGB color;
     
-    private short occupiedNeighbors, sumR, sumG, sumB;
+    private AtomicInteger occupiedNeighbors;
+    private short sumR, sumG, sumB;
     
     private OpenPixelNode openNode;
     
     public Pixel(int x, int y) {
         this.x = (short)x;
         this.y = (short)y;
+        occupiedNeighbors = new AtomicInteger(0);
     }
     
     public synchronized boolean setColor(RGB color) {
         if(isSet()) return false;
         this.color = color;
         
-        
         for(Dir dir : Dir.vals) {
             Pixel neighbor = getPixel(x + dir.dx, y + dir.dy);
             if(neighbor != null && !neighbor.isSet())
                 if(neighbor.addNeighbor(color)) {
-                    
+                    OpenPixelList.getInstance().add(neighbor);
                 }
-                    
         }
+        
+        OpenPixelList.getInstance().remove(this);
         
         drawTo(Fractle.image);
         return true;
@@ -84,14 +82,15 @@ public class Pixel {
      * @return returns whether this pixel is newly open.
      */
     public boolean addNeighbor(RGB neighborColor) {
-        occupiedNeighbors++;
+        boolean newlySurrounded = occupiedNeighbors.getAndIncrement() == 0;
+        
         sumR += neighborColor.getR();
         sumG += neighborColor.getG();
         sumB += neighborColor.getB();
         
-        drawTo(Fractle.image);
+        //drawTo(Fractle.image);
         
-        return color == null && occupiedNeighbors == 1;
+        return color == null && newlySurrounded;
     }
     
     public int getRGB() {
@@ -109,6 +108,13 @@ public class Pixel {
         return dr * dr + dg * dg + db * db;
     }
     
+    public int trueDistSqr(Pixel origin) {
+        int dx = x - origin.x,
+            dy = y - origin.y;
+        
+        return dx * dx + dy * dy;
+    }
+    
     private void drawTo(BufferedImage image) {
         image.setRGB(x, y, getRGB());
     }
@@ -117,26 +123,28 @@ public class Pixel {
         if(isSet())
             return color.getR();
         
-        return (sumR / occupiedNeighbors) & 0xFF;
+        return (sumR / occupiedNeighbors.get()) & 0xFF;
     }
     
     private int getG() {
         if(isSet())
             return color.getG();
         
-        return (sumG / occupiedNeighbors) & 0xFF;
+        return (sumG / occupiedNeighbors.get()) & 0xFF;
     }
     
     private int getB() {
         if(isSet())
             return color.getB();
         
-        return (sumB / occupiedNeighbors) & 0xFF;
+        return (sumB / occupiedNeighbors.get()) & 0xFF;
     }
     
     private void resetQuiet() {
         color = null;
-        occupiedNeighbors = sumR = sumG = sumB = 0;
+        openNode = null;
+        occupiedNeighbors.set(0);
+        sumR = sumG = sumB = 0;
     }
 }
 

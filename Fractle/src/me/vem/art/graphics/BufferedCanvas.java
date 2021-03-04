@@ -7,6 +7,8 @@ import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.image.BufferStrategy;
 
+import me.vem.art.struc.OpenPixelList;
+
 public abstract class BufferedCanvas extends Canvas{
 	
 	private static final long serialVersionUID = 2293864682604141349L;
@@ -41,7 +43,8 @@ public abstract class BufferedCanvas extends Canvas{
 			}while(strat.contentsRestored());
 			strat.show();
 		}while(strat.contentsLost());
-		
+
+        System.out.printf("Iterating over %d open nodes...%n", OpenPixelList.getInstance().size());
 		return System.currentTimeMillis() - start; //dt
 	}
 	
