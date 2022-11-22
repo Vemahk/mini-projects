@@ -3,6 +3,8 @@ package me.vem.art;
 import java.util.Arrays;
 import java.util.Comparator;
 
+import me.vem.art.async.ThreadedPrinter;
+
 public class RGB{
 	
 	private static int start = 0;
@@ -23,6 +25,7 @@ public class RGB{
 	public static void buildRGBLookup(int colorBits) {
 		if(colors == null) {
 			//Sorted set of all colors.
+            ThreadedPrinter.logAsync("Beginning RGB Array Allocation");
 			colors = new RGB[1 << (colorBits * 3)];
 
 			start = (int)(Math.random() * colors.length);
@@ -30,6 +33,8 @@ public class RGB{
 			
 			int colorBitsInv = 8 - colorBits;
 			final int maxVal = 1<<colorBits;
+
+            ThreadedPrinter.logAsync("Beginning RGB Object Construction");
 			
 			//Gather all x-bit colors into the array.
 			for(int i=0, r = 0, g = 0, b = 0;;) {
@@ -40,6 +45,7 @@ public class RGB{
 					if(++g == maxVal) {
 						g = 0;
 						if(++b == maxVal) { //All possible colors reached; end.
+						    ThreadedPrinter.logAsync("RGB Objects Built; Beginning Sort");
 							Arrays.sort(colors, new Comparator<RGB>() { 
 								@Override public int compare(RGB c1, RGB c2) {
 									if(c1.getHue() != c2.getHue())
@@ -47,7 +53,7 @@ public class RGB{
 									return c1.getRGB() - c2.getRGB();
 								}
 							});
-							System.out.printf("Array built | %d colors%n", i);
+                            ThreadedPrinter.logAsyncf("RGB Sort Complete; %d colors", i);
 							break; 
 						}
 					}

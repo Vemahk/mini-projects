@@ -41,7 +41,7 @@ public abstract class BufferedCanvas extends Canvas{
 			}while(strat.contentsRestored());
 			strat.show();
 		}while(strat.contentsLost());
-		
+
 		return System.currentTimeMillis() - start; //dt
 	}
 	

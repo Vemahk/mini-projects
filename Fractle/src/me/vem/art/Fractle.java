@@ -8,6 +8,7 @@ import java.util.Random;
 
 import javax.imageio.ImageIO;
 
+import me.vem.art.async.ThreadedPrinter;
 import me.vem.art.graphics.Preview;
 
 public class Fractle {
@@ -63,22 +64,26 @@ public class Fractle {
 		HEIGHT <<= colorBits*3 / 2;
 		
 		System.out.printf("WIDTH %d | HEIGHT %d%n", WIDTH, HEIGHT);
-
-		RGB.buildRGBLookup(colorBits);
-
-		//Image that will be drawn to.
-		image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
 		
-		//Builds the JFrame to display the preview of the image's construction.
-		Preview.build();
+		setupTask(() -> {
+		    RGB.buildRGBLookup(colorBits);		    
+		}, "Lookup");
 		
-		System.out.println("Frame built.");
+		setupTask(() -> {
+	        //Image that will be drawn to.
+	        image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);      
+        }, "Image");
+        
+        setupTask(() -> {
+            //Builds the JFrame to display the preview of the image's construction.
+            Preview.build();
+        }, "Preview");
 		
 		do {
 			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
 			RGB.build(WIDTH, HEIGHT);
 			RGB.resetAll();
-			System.out.println("\nBitmap created");
+			ThreadedPrinter.logAsync("Bitmap created");
 			
 			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
 			LinkedList<RGB> open = new LinkedList<>();
@@ -86,10 +91,14 @@ public class Fractle {
 			//Places the first pixel randomly from which the rest of the image builds.
 			for(int x=0;x<NUM_START;x++)
 				open.add(RGB.getNext().setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT)));
+			
 			//Iteration time!
+			int count = 0;
+			long milli = System.currentTimeMillis();
+			
 			for(RGB next = RGB.getNext(); next != null; next = RGB.getNext()) {
 				if(!alive) {
-					System.out.println("Interrupted");
+					ThreadedPrinter.logAsync("Interrupted");
 					break;
 				}
 				
@@ -109,9 +118,19 @@ public class Fractle {
 				
 				if(next.isOpen())
 					open.add(next);
+				
+				count++;
+				
+				long currTime = System.currentTimeMillis();
+				if(currTime - milli >= 1000) {
+				    ThreadedPrinter.logAsyncf("Placed %d pixels. Current open size: %d. Weight: %d", count, open.size(), count * open.size());
+				    
+			        milli = currTime;
+                    count = 0;
+				}
 			}
 			
-			System.out.println("Image built");
+			ThreadedPrinter.logAsync("Image built");
 			
 			try {
 				if(save) 
@@ -120,6 +139,14 @@ public class Fractle {
 		}while(repeat);
 		
 		//alive = false;
+	}
+	
+	private static void setupTask(Runnable task, String name) {
+	    long startTime = System.currentTimeMillis();
+	    task.run();
+	    long endTime = System.currentTimeMillis();
+	    
+	    ThreadedPrinter.logAsyncf("Setup Task: %s, Finished in %.3f seconds.", name, (endTime - startTime) / 1000f);
 	}
 	
 	/**
@@ -133,10 +160,10 @@ public class Fractle {
 		File outFile = new File(SAVE, "fract01.png");
 		for(int i=2;outFile.exists();i++)
 			outFile = new File(SAVE, String.format("fract%02d.png", i));
-		System.out.println("Out file: "+outFile.getName());
+		ThreadedPrinter.logAsync("Out file: "+outFile.getName());
 		ImageIO.write(image, "png", outFile);
 		
-		System.out.println("Image written");
+		ThreadedPrinter.logAsync("Image written");
 	}
 	
 }
