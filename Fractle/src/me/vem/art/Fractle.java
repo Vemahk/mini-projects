@@ -9,94 +9,67 @@ import java.util.Random;
 import javax.imageio.ImageIO;
 
 import me.vem.art.async.ThreadedPrinter;
-import me.vem.art.graphics.Preview;
+import me.vem.art.graphics.preview.Preview;
+import me.vem.art.rgb.ColorWheel;
+import me.vem.art.rgb.RGB;
 
 public class Fractle {
-	public static int WIDTH = 1;
-	public static int HEIGHT = 1;
-	
 	//Directory where the program will save the image once done.
 	public static final File SAVE = new File("saves\\");
 	
-	public static BufferedImage image;
+	private static ColorWheel colorWheel;
+	private static BufferedImage image;
 	public static boolean alive = true;
 	
 	public static Random rand = new Random();
 	
-	/* ARGS */
-	public static boolean save;
-	public static boolean repeat;
-	public static byte colorBits = 6;
-	public static byte NUM_START = 1;
-	
-	public static boolean parseArgs(String... args) {
-		for(int i=0;i<args.length;i++) {
-			if("-repeat".equals(args[i]))
-				repeat = true;
-			if("-bits".equals(args[i]) && args.length > i + 1)
-				try {
-					colorBits = Byte.parseByte(args[i+1]);
-					switch(colorBits) {
-					case 8: Preview.scaleDiv <<= 1;
-					case 7: Preview.scaleDiv <<= 2;
-					default: break;
-					}
-				}catch (NumberFormatException e) { e.printStackTrace(); }
-			if("-save".equals(args[i]))
-				save = true;
-			if("-help".equals(args[i])) {
-				System.out.printf("Available commands:%n%s%n%s%n%s%n%s%n", "-repeat", "-bits [4-8]", "-save", "-numstart [1-127]");
-				return true;
-			}
-			if("-numstart".equals(args[i]) && args.length > i + 1)
-				try {
-					NUM_START = Byte.parseByte(args[i+1]);
-				}catch(NumberFormatException e) {e.printStackTrace();}
-		}
-		return false;
-	}
-	
 	public static void main(String... args) throws IOException, InterruptedException {
 		
-		if(parseArgs(args)) return;
-		
-		WIDTH <<= (colorBits*3+1)/2;
-		HEIGHT <<= colorBits*3 / 2;
+	    FractleArgs fractleArgs = new FractleArgs(args);
+	    if(fractleArgs.isHelp())
+	        return;
+	    
+		int WIDTH = fractleArgs.getWidth();
+		int HEIGHT = fractleArgs.getHeight();
 		
 		System.out.printf("WIDTH %d | HEIGHT %d%n", WIDTH, HEIGHT);
 		
 		setupTask(() -> {
-		    RGB.buildRGBLookup(colorBits);		    
+		    colorWheel = new ColorWheel(fractleArgs.colorBits);
 		}, "Lookup");
 		
 		setupTask(() -> {
 	        //Image that will be drawn to.
-	        image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);      
+	        image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB); 
         }, "Image");
         
         setupTask(() -> {
             //Builds the JFrame to display the preview of the image's construction.
-            Preview.build();
+            new Preview(image, fractleArgs.scaleDiv);
         }, "Preview");
 		
-		do {
+		while(alive) {
 			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
 			RGB.build(WIDTH, HEIGHT);
-			RGB.resetAll();
+			colorWheel.reset();
+			
 			ThreadedPrinter.logAsync("Bitmap created");
 			
 			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
 			LinkedList<RGB> open = new LinkedList<>();
 			
 			//Places the first pixel randomly from which the rest of the image builds.
-			for(int x=0;x<NUM_START;x++)
-				open.add(RGB.getNext().setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT)));
+			for(int x=0;x<fractleArgs.NUM_START;x++) {
+			    open.add(colorWheel.next().setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT), image));
+			}
 			
 			//Iteration time!
 			int count = 0;
 			long milli = System.currentTimeMillis();
 			
-			for(RGB next = RGB.getNext(); next != null; next = RGB.getNext()) {
+			while(colorWheel.hasNext()) {
+			    RGB next = colorWheel.next();
+			    
 				if(!alive) {
 					ThreadedPrinter.logAsync("Interrupted");
 					break;
@@ -111,10 +84,10 @@ public class Fractle {
 					if(!rNext.isOpen()) rIter.remove();
 					else if(closest == null)
 						closest = rNext;
-					else if(rNext.distSqr(next) < closest.distSqr(next))
+					else if(RGB.distSqr(rNext, next) < RGB.distSqr(closest, next))
 						closest = rNext;
 				}
-				closest.setRandomly(next);
+				closest.setRandomly(next, image);
 				
 				if(next.isOpen())
 					open.add(next);
@@ -133,12 +106,13 @@ public class Fractle {
 			ThreadedPrinter.logAsync("Image built");
 			
 			try {
-				if(save) 
+				if(fractleArgs.save) 
 					saveImage(image);
 			} catch (IOException e) { e.printStackTrace(); }
-		}while(repeat);
-		
-		//alive = false;
+			
+			if(!fractleArgs.repeat)
+			    break;
+		}
 	}
 	
 	private static void setupTask(Runnable task, String name) {

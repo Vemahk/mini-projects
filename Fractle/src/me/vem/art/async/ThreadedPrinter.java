@@ -54,14 +54,14 @@ public class ThreadedPrinter {
                     return;
                 }
             }
-        });
+        }, "threaded-printer");
         
         printThread.setDaemon(true);
         printThread.start();
     }
     
-    private static SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    public static void log(String str) {
+    private final static SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static void log(String str) {
         System.out.printf("[%s] %s%n", sdfDate.format(new Date()), str);
     }
 }
