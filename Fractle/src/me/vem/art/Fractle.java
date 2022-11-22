@@ -1,143 +1,140 @@
 package me.vem.art;
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.IOException;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Random;
-
-import javax.imageio.ImageIO;
+import java.util.concurrent.atomic.AtomicLong;
 
 import me.vem.art.async.ThreadedPrinter;
-import me.vem.art.graphics.preview.Preview;
+import me.vem.art.rgb.ColorBoard;
+import me.vem.art.rgb.ColorChange;
 import me.vem.art.rgb.ColorWheel;
-import me.vem.art.rgb.RGB;
+import me.vem.art.struct.LimitedConcurrentQueue;
 
-public class Fractle {
-	//Directory where the program will save the image once done.
-	public static final File SAVE = new File("saves\\");
+public class Fractle extends Thread {
+    
+	private final Random rand = new Random();
 	
-	private static ColorWheel colorWheel;
-	private static BufferedImage image;
-	public static boolean alive = true;
+	private final ColorWheel colorWheel;
 	
-	public static Random rand = new Random();
+	private final int width;
+	private final int height;
+	private final int numStart;
 	
-	public static void main(String... args) throws IOException, InterruptedException {
-		
-	    FractleArgs fractleArgs = new FractleArgs(args);
-	    if(fractleArgs.isHelp())
-	        return;
+	private final boolean repeat;
+    
+    public final LimitedConcurrentQueue<ColorChange> queue = new LimitedConcurrentQueue<>();
+	
+    private final AtomicLong productionCount = new AtomicLong(0);
+    private final AtomicLong loopSize = new AtomicLong(0);
+    
+	public Fractle(ColorWheel colorWheel, int width, int height, int numStart, boolean repeat) {
+	    this.colorWheel = colorWheel;
+	    this.width = width;
+	    this.height = height;
+	    this.numStart = numStart;
+	    this.repeat = repeat;
+	}
+	
+	@Override
+	public void run() {
+        // The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
+	    LinkedList<ColorChange> open = new LinkedList<ColorChange>();
 	    
-		int WIDTH = fractleArgs.getWidth();
-		int HEIGHT = fractleArgs.getHeight();
-		
-		System.out.printf("WIDTH %d | HEIGHT %d%n", WIDTH, HEIGHT);
-		
-		setupTask(() -> {
-		    colorWheel = new ColorWheel(fractleArgs.colorBits);
-		}, "Lookup");
-		
-		setupTask(() -> {
-	        //Image that will be drawn to.
-	        image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB); 
-        }, "Image");
+	    Thread logThread = new Thread(() -> {
+	        while(true) {
+	            try {
+                    Thread.sleep(1000);
+                } 
+	            catch (InterruptedException e) {
+                    return;
+                }
+	            finally {
+	                long count = productionCount.getAndSet(0);
+	                long loopSize = this.loopSize.getAndSet(0);
+	                ThreadedPrinter.logAsyncf("Placed %d pixels. Current open size: %d. Weight: %d", count, open.size(), loopSize);
+	            }
+	        }
+	    }) ;
+	    
+	    logThread.setDaemon(true);
+	    logThread.start();
+	    
+	    try {
+	        while(!isInterrupted()) {
+	            loop(open);
+	            if(!repeat)
+	                break;
+	        }
+	    }
+	    finally {
+	        ThreadedPrinter.logAsync("Fractle Complete");
+	        queue.endProduction();
+	        logThread.interrupt();
+	    }
+	}
+	
+	private void loop(LinkedList<ColorChange> open) {
+
+        //Builds the matrix to store the set of Pos objects that will handle which pixels are open.
+        ColorBoard board = new ColorBoard(width, height);
+        Iterator<Integer> colorIter = colorWheel.iterator();
         
-        setupTask(() -> {
-            //Builds the JFrame to display the preview of the image's construction.
-            new Preview(image, fractleArgs.scaleDiv);
-        }, "Preview");
-		
-		while(alive) {
-			//Builds the matrix to store the set of Pos objects that will handle which pixels are open.
-			RGB.build(WIDTH, HEIGHT);
-			colorWheel.reset();
-			
-			ThreadedPrinter.logAsync("Bitmap created");
-			
-			//The set of all open pixels. A pixel is defined as open if it is set and has a nearby unset pixel.
-			LinkedList<RGB> open = new LinkedList<>();
-			
-			//Places the first pixel randomly from which the rest of the image builds.
-			for(int x=0;x<fractleArgs.NUM_START;x++) {
-			    open.add(colorWheel.next().setPos(rand.nextInt(WIDTH), rand.nextInt(HEIGHT), image));
-			}
-			
-			//Iteration time!
-			int count = 0;
-			long milli = System.currentTimeMillis();
-			
-			while(colorWheel.hasNext()) {
-			    RGB next = colorWheel.next();
-			    
-				if(!alive) {
-					ThreadedPrinter.logAsync("Interrupted");
-					break;
-				}
-				
-				Iterator<RGB> rIter = open.iterator();
-				
-				RGB closest = null;
-				
-				while(rIter.hasNext()) {
-					RGB rNext = rIter.next();
-					if(!rNext.isOpen()) rIter.remove();
-					else if(closest == null)
-						closest = rNext;
-					else if(RGB.distSqr(rNext, next) < RGB.distSqr(closest, next))
-						closest = rNext;
-				}
-				closest.setRandomly(next, image);
-				
-				if(next.isOpen())
-					open.add(next);
-				
-				count++;
-				
-				long currTime = System.currentTimeMillis();
-				if(currTime - milli >= 1000) {
-				    ThreadedPrinter.logAsyncf("Placed %d pixels. Current open size: %d. Weight: %d", count, open.size(), count * open.size());
-				    
-			        milli = currTime;
-                    count = 0;
-				}
-			}
-			
-			ThreadedPrinter.logAsync("Image built");
-			
-			try {
-				if(fractleArgs.save) 
-					saveImage(image);
-			} catch (IOException e) { e.printStackTrace(); }
-			
-			if(!fractleArgs.repeat)
-			    break;
-		}
+        open.clear();
+        
+        //Places the first pixel randomly from which the rest of the image builds.
+        for(int i=0;i<numStart;i++) {
+            int rx = rand.nextInt(width);
+            int ry = rand.nextInt(height);
+            int rgb = colorIter.next().intValue();
+            
+            ColorChange openColor = board.set(rx, ry, rgb);
+            open.add(openColor);
+            queue.offer(openColor);
+        }
+        
+        while(colorIter.hasNext()) {
+            int nextColor = colorIter.next();
+            
+            if(isInterrupted()) {
+                ThreadedPrinter.logAsync("Interrupted");
+                break;
+            }
+            
+            Iterator<ColorChange> rIter = open.iterator();
+            
+            ColorChange closest = null;
+
+            long numOpen = 0;
+            while(rIter.hasNext()) {
+                ColorChange rNext = rIter.next();
+                if(!board.isOpen(rNext.x, rNext.y)) rIter.remove();
+                else if(closest == null)
+                    closest = rNext;
+                else if(distSqr(rNext.rgb, nextColor) < distSqr(closest.rgb, nextColor))
+                    closest = rNext;
+                
+                numOpen++;
+            }
+            
+            ColorChange setColor = board.setRandomNeighbor(closest.x, closest.y, nextColor);
+            open.add(setColor);
+            queue.offer(setColor);
+            
+            productionCount.incrementAndGet();
+            loopSize.addAndGet(numOpen);
+        }
 	}
 	
-	private static void setupTask(Runnable task, String name) {
-	    long startTime = System.currentTimeMillis();
-	    task.run();
-	    long endTime = System.currentTimeMillis();
-	    
-	    ThreadedPrinter.logAsyncf("Setup Task: %s, Finished in %.3f seconds.", name, (endTime - startTime) / 1000f);
-	}
+    private static int distSqr(int aRGB, int bRGB) {
+        int dr = getR(aRGB) - getR(bRGB);
+        int dg = getG(aRGB) - getG(bRGB);
+        int db = getB(aRGB) - getB(bRGB);
+        return dr * dr + dg * dg + db * db;
+    }
+
+    private static int getR(int rgb) { return (rgb >>> 16) & 0xFF; }
+    private static int getG(int rgb) { return (rgb >>> 8) & 0xFF; }
+    private static int getB(int rgb) { return rgb & 0xFF; }
 	
-	/**
-	 * Saves the given BufferedImage to a file.
-	 * @param image
-	 * @throws IOException
-	 */
-	public static void saveImage(BufferedImage image) throws IOException {
-		if(!SAVE.exists()) SAVE.mkdirs();
-		
-		File outFile = new File(SAVE, "fract01.png");
-		for(int i=2;outFile.exists();i++)
-			outFile = new File(SAVE, String.format("fract%02d.png", i));
-		ThreadedPrinter.logAsync("Out file: "+outFile.getName());
-		ImageIO.write(image, "png", outFile);
-		
-		ThreadedPrinter.logAsync("Image written");
-	}
 	
 }

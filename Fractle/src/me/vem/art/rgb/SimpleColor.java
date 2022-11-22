@@ -11,10 +11,6 @@ public class SimpleColor {
         this.hue = getHue(r,g,b);
     }
     
-    public RGB toRGB() {
-        return new RGB(r, g, b);
-    }
-    
     public int toInt() {
         return (r&0xFF)<<16 | (g&0xFF)<<8 | (b&0xFF);
     }

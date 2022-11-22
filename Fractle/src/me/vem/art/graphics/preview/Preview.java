@@ -1,24 +1,21 @@
 package me.vem.art.graphics.preview;
 import java.awt.Point;
-import java.awt.image.BufferedImage;
 
 import javax.swing.JFrame;
 
-import me.vem.art.Fractle;
+public final class Preview extends Thread {
 
-public final class Preview implements AutoCloseable{
-
-    private final BufferedImage image;
     private final PreviewMouseAdapter mouseInput;
     
     private final Point pos = new Point(0, 0);
     private final JFrame frame;
+    private final PreviewCanvas canvas;
 	
     private int scaleDiv;
     
-	public Preview(BufferedImage image, int initScaleDiv) {
+	public Preview(int width, int height, int initScaleDiv) {
+	    super("Fractle Preview Thread");
 	    
-	    this.image = image;
 	    this.scaleDiv = initScaleDiv;
 	    
 		frame = new JFrame("Fractle Preview");
@@ -26,7 +23,7 @@ public final class Preview implements AutoCloseable{
 		
 		frame.addWindowListener(new PreviewWindowAdapter(this));
 		
-		PreviewCanvas canvas = new PreviewCanvas(this);
+		canvas = new PreviewCanvas(this, width, height);
 		canvas.setFocusable(true);
 		frame.setLocationRelativeTo(null);
 		frame.setVisible(true);
@@ -40,18 +37,28 @@ public final class Preview implements AutoCloseable{
 		canvas.addMouseMotionListener(mouseInput);
 		canvas.addMouseWheelListener(mouseInput);
 		
-		new Thread(() -> {
-			while(Fractle.alive) {
-				long dt = canvas.render();
-				
-				long sleep = 17 - dt;
-				if(sleep > 0) try { Thread.sleep(sleep); } catch (InterruptedException e) { }
-			}
-		}, "Fractle Repaint Thread").start();
+		this.setDaemon(true);
 	}
 	
-	public BufferedImage getImage() {
-	    return image;
+	@Override
+	public void run() {
+	    final long nanosPerSecond = 1_000_000_000;
+	    final long nanosPerMilli = 1_000_000;
+	    final long desiredFps = 60;
+	    final long nanosPerFrame = nanosPerSecond / desiredFps;
+	    
+	    while(!isInterrupted()) {
+            long dt = render();
+            
+            long sleep = nanosPerFrame - dt;
+            if(sleep > 0) try {
+                Thread.sleep(sleep / nanosPerMilli, (int)(sleep % nanosPerMilli)); 
+            } catch (InterruptedException e) { return; }
+        }
+	}
+	
+	public long render() {
+	    return canvas.render();
 	}
 	
 	public JFrame getFrame() {
@@ -76,9 +83,17 @@ public final class Preview implements AutoCloseable{
 	    return pos;
 	}
 	
+	public void setRGB(int x, int y, int rgb) {
+	    this.canvas.setRGB(x, y, rgb);
+	}
+	
+	public void save() {
+	    this.canvas.save();
+	}
+	
 	public void close() {
 		frame.setVisible(false);
 		frame.dispose();
-		Fractle.alive = false;
+		System.exit(0);
 	}
 }

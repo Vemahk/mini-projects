@@ -5,21 +5,16 @@ import java.util.Iterator;
 
 import me.vem.art.async.ThreadedPrinter;
 
-public class ColorWheel implements Iterator<RGB> {
+public class ColorWheel implements Iterable<Integer> {
 
     private final int size;
     
     //Sorted set of all colors.
     private final int[] colors;
     
-    private int position;
-    private int remaining;
-    
     public ColorWheel(int colorBits) {
         
         size = 1 << (colorBits * 3);
-        reset();
-        
         ThreadedPrinter.logAsync("ColorWheel > Sorting SimpleColors");
         
         //Gather all x-bit colors into the array.
@@ -53,25 +48,30 @@ public class ColorWheel implements Iterator<RGB> {
         ThreadedPrinter.logAsyncf("ColorWheel Init Complete; %d colors", size);
     }
 
-    public void reset() {
-        position = (int)(Math.random() * size);
-        remaining = size;
-    }
-    
     @Override
-    public boolean hasNext() {
-        return remaining > 0;
-    }
+    public Iterator<Integer> iterator() {
+        return new Iterator<Integer>() {
+            
+            private int position = (int)(Math.random() * size);
+            private int remaining = size;;
 
-    @Override
-    public RGB next() {
-        RGB next = new RGB(colors[position]);
+            @Override
+            public boolean hasNext() {
+                return remaining > 0;
+            }
+
+            @Override
+            public Integer next() {
+                int rgb = colors[position];
+                
+                if(++position >= size)
+                    position = 0;
+                
+                remaining--;
+                
+                return rgb;
+            };
         
-        if(++position >= size)
-            position = 0;
-        
-        remaining--;
-        
-        return next;
+        };
     }
 }

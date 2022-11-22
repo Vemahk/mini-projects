@@ -39,9 +39,10 @@ public class PreviewMouseAdapter extends MouseInputAdapter {
                 double mult = (double)scaleDivOld / preview.getScaleDiv();
                 
                 Point curPos = preview.getPos();
+                Point click = e.getPoint();
                 
-                double x = (e.getX() * (1-mult) - curPos.x * mult);
-                double y = (e.getY() * (1-mult) - curPos.y * mult);
+                double x = (click.x * (1-mult) - curPos.x * mult);
+                double y = (click.y * (1-mult) - curPos.y * mult);
                 curPos.setLocation(x, y);
             }
             last = cur;

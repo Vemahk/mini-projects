@@ -26,10 +26,10 @@ public abstract class BufferedCanvas extends Canvas{
 	}
 	
 	/**
-	 * @return the time in milliseconds it took to render.
+	 * @return the time in nanoseconds it took to render.
 	 */
 	public long render() {
-		long start = System.currentTimeMillis();
+		long start = System.nanoTime();
 		do {
 			do {
 				Graphics graphics = strat.getDrawGraphics();
@@ -42,7 +42,7 @@ public abstract class BufferedCanvas extends Canvas{
 			strat.show();
 		}while(strat.contentsLost());
 
-		return System.currentTimeMillis() - start; //dt
+		return System.nanoTime() - start;
 	}
 	
 	public abstract void render(Graphics g);
