@@ -7,36 +7,44 @@ public class EnigmaCipher implements Cipher{
 
 	private Machine machine;
 	
-	@Override
-	public Cipher setup(byte[] key) {
-		if(machine != null)
-			throw new RuntimeException("Cipher has already been setup.");
-		
-		if(key.length < 8) {
-			byte[] tmp = new byte[8];
-			for(int i=0;i<key.length;i++)
-				tmp[i] = key[i];
-			key = tmp;
-		}
-		
-		ByteBuffer buf = ByteBuffer.wrap(key);
-		long l = buf.getLong();
-		
-		machine = new Machine(l);
-		return this;
+	public EnigmaCipher(byte[] key) {
+	    init(key);
+	}
+	
+	public EnigmaCipher(long l) {
+        byte[] arr = new byte[8];
+        ByteBuffer buf = ByteBuffer.wrap(arr);
+        buf.putLong(l);
+        init(arr);
+	}
+    
+    public EnigmaCipher(int i) {
+        byte[] arr = new byte[4];
+        ByteBuffer buf = ByteBuffer.wrap(arr);
+        buf.putInt(i);
+        init(arr);
+    }
+	
+	private void init(byte[] key) {
+        if(key.length < 8) {
+            byte[] tmp = new byte[8];
+            for(int i=0;i<key.length;i++)
+                tmp[i] = key[i];
+            key = tmp;
+        }
+        
+        ByteBuffer buf = ByteBuffer.wrap(key);
+        long l = buf.getLong();
+        
+        machine = new Machine(l);
 	}
 
 	@Override
 	public byte translate(byte b, boolean encrypt) {
-	    if(machine == null)
-	        throw new RuntimeException("Could not translate through EnigmaCipher - Machine has not been built.");
-	    
 	    return machine.encode(b);
 	}
 	
 	public void translate(byte[] b, int len) {
-		if(machine == null) return;
-		
 		machine.encode(b, len);
 	}
 

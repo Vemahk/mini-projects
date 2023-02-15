@@ -78,7 +78,7 @@ public class Program {
         byte[] seed = new byte[8];
         new Random().nextBytes(seed);
         
-        EnigmaCipher cipher = (EnigmaCipher)new EnigmaCipher().setup(seed);
+        EnigmaCipher cipher = new EnigmaCipher(seed);
 
         byte[] buffer = new byte[4096];
         int len = 0;
@@ -131,8 +131,7 @@ public class Program {
         raf.setLength(raf.length() - 8);
         raf.seek(0);
 
-        EnigmaCipher cipher = new EnigmaCipher();
-        cipher.setup(seed);
+        EnigmaCipher cipher = new EnigmaCipher(seed);
 
         byte[] buf = new byte[4096];
         int len = 0;
